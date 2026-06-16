@@ -45,7 +45,7 @@ export default function CreateTripModal({ onClose, onCreated }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-t-3xl bg-white px-5 pb-10 pt-4 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <div className="mx-auto h-1 w-10 rounded-full bg-zinc-200" />
