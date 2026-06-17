@@ -1,26 +1,28 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --terra: #C2714A;
+  --terra-dark: #A85C38;
+  --terra-light: #F5E8DF;
+  --sage: #6B8F71;
+  --text-primary: #2C2416;
+  --text-secondary: #8A7B6A;
+  --text-muted: #B5A89A;
+  --bg: #FAFAF7;
+  --border: #E8DFD0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #FAFAF7;
+  color: #2C2416;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
 }
