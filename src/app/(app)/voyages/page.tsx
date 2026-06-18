@@ -227,7 +227,7 @@ export default function VoyagesPage() {
   }
 
   return (
-    <PageFade><div className="px-4 pt-14">
+    <PageFade><div className="px-4 pt-10">
       {refreshing && (
         <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#F5E8DF] border-t-[#C2714A]" />

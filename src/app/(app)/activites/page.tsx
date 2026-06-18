@@ -109,7 +109,7 @@ export default function BibliothequeePage() {
 
   return (
     <PageFade>
-      <div className="px-5 pt-14 pb-28">
+      <div className="px-5 pt-10 pb-28">
         {refreshing && (
           <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#F5E8DF] border-t-[#C2714A]" />

@@ -92,7 +92,7 @@ export default function ExplorerPage() {
 
   return (
     <PageFade>
-      <div className="min-h-screen px-5 pt-14 pb-28" style={{ background: '#FAF8F5' }}>
+      <div className="min-h-screen px-5 pt-10 pb-28" style={{ background: '#FAF8F5' }}>
         <div className="mb-5">
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Communauté</p>
           <h1 className="text-2xl font-bold" style={{ color: '#2C2416' }}>Explorer</h1>

@@ -133,7 +133,7 @@ export default function AutourDeMoiPage() {
   }, [activeFilter, position, fetchPlaces])
 
   return (
-    <div className="flex min-h-screen flex-col px-5 pt-14">
+    <div className="flex min-h-screen flex-col px-5 pt-10">
       <div className="mb-5">
         <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Explorer</p>
         <h1 className="text-2xl font-bold" style={{ color: '#2C2416' }}>Autour de moi</h1>
