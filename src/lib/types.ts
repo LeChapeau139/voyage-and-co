@@ -18,6 +18,13 @@ export interface Trip {
   updated_at: string
 }
 
+export interface Follow {
+  id: string
+  follower_id: string
+  following_id: string
+  created_at: string
+}
+
 export interface Profile {
   id: string
   username: string | null

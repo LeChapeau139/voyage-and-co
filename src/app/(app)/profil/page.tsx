@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -29,6 +30,8 @@ export default function ProfilPage() {
   const [visitedCountries, setVisitedCountries] = useState<string[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
+  const [followersCount, setFollowersCount] = useState(0)
+  const [following, setFollowing] = useState<(Profile & { follow_id: string })[]>([])
 
   // Edit form state
   const [editUsername, setEditUsername] = useState('')
@@ -45,12 +48,14 @@ export default function ProfilPage() {
   useEffect(() => {
     if (!user) return
     async function fetchAll() {
-      const [tripsRes, memoriesRes, placesRes, destinationsRes, profileRes] = await Promise.all([
+      const [tripsRes, memoriesRes, placesRes, destinationsRes, profileRes, followersRes, followingRes] = await Promise.all([
         supabase.from('trips').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
         supabase.from('activities').select('id', { count: 'exact', head: true }).eq('entry_type', 'memory').eq('user_id', user!.id),
         supabase.from('places').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
         supabase.from('trips').select('destination').eq('user_id', user!.id).not('destination', 'is', null),
         supabase.from('profiles').select('*').eq('id', user!.id).single(),
+        supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', user!.id),
+        supabase.from('follows').select('id, following_id').eq('follower_id', user!.id),
       ])
       const countryNames = [
         ...new Set(
@@ -66,8 +71,21 @@ export default function ProfilPage() {
         places: placesRes.count ?? 0,
         countries: countryNames.length,
       })
-      if (profileRes.data) {
-        setProfile(profileRes.data)
+      if (profileRes.data) setProfile(profileRes.data)
+      setFollowersCount(followersRes.count ?? 0)
+
+      // Fetch profiles of people we follow
+      const followingIds = (followingRes.data ?? []).map(f => f.following_id)
+      if (followingIds.length > 0) {
+        const { data: followingProfiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', followingIds)
+        const withFollowId = (followingProfiles ?? []).map(p => ({
+          ...p,
+          follow_id: (followingRes.data ?? []).find(f => f.following_id === p.id)?.id ?? '',
+        }))
+        setFollowing(withFollowId)
       }
     }
     fetchAll()
@@ -198,9 +216,22 @@ export default function ProfilPage() {
             </p>
           )}
 
+          {/* Followers / Following counts */}
+          <div className="mt-2 flex items-center gap-5">
+            <div className="text-center">
+              <p className="text-base font-bold" style={{ color: '#2C2416' }}>{followersCount}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#B5A89A' }}>Abonnés</p>
+            </div>
+            <div className="h-6 w-px" style={{ background: '#E8DFD0' }} />
+            <div className="text-center">
+              <p className="text-base font-bold" style={{ color: '#2C2416' }}>{following.length}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#B5A89A' }}>Abonnements</p>
+            </div>
+          </div>
+
           <button
             onClick={openEdit}
-            className="mt-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition active:scale-95"
+            className="mt-2 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition active:scale-95"
             style={{ background: '#F7F2EA', color: '#8A7B6A' }}
           >
             ✏️ Modifier le profil
@@ -225,6 +256,40 @@ export default function ProfilPage() {
             </div>
           ))}
         </div>
+
+        {/* Abonnements */}
+        {following.length > 0 && (
+          <div className="mb-6">
+            <p className="mb-3 px-5 text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>
+              Mes abonnements
+            </p>
+            <div className="flex gap-3 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: 'none' }}>
+              {following.map(p => (
+                <Link key={p.id} href={`/explorer/${p.id}`}>
+                  <div className="flex flex-shrink-0 flex-col items-center gap-1.5 transition active:scale-95">
+                    <div
+                      className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full text-2xl shadow-sm"
+                      style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', border: '2px solid #E8DFD0' }}
+                    >
+                      {p.avatar_url
+                        ? <img src={p.avatar_url} alt="" className="h-full w-full object-cover" />
+                        : p.avatar_emoji || '🧳'
+                      }
+                    </div>
+                    <p className="max-w-[56px] truncate text-center text-[10px] font-semibold" style={{ color: '#2C2416' }}>
+                      {p.display_name || p.username || '?'}
+                    </p>
+                    {p.username && (
+                      <p className="max-w-[56px] truncate text-center text-[9px]" style={{ color: '#B5A89A' }}>
+                        @{p.username}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* World Map */}
         <div className="mb-6 overflow-hidden rounded-3xl shadow-sm" style={{ background: '#FFFFFF', boxShadow: '0 2px 12px rgba(44,36,22,0.08)' }}>
