@@ -201,6 +201,13 @@ export default function TripDetailPage() {
     fetchData()
   }
 
+  const togglePublic = async () => {
+    const newValue = !trip?.is_public
+    await supabase.from('trips').update({ is_public: newValue }).eq('id', id)
+    toast.success(newValue ? 'Voyage rendu public 🌍' : 'Voyage rendu privé 🔒')
+    fetchData()
+  }
+
   const deleteTrip = async () => {
     setDeleting(true)
     await supabase.from('activities').delete().eq('trip_id', id)
@@ -258,15 +265,27 @@ export default function TripDetailPage() {
             </svg>
             Mes voyages
           </button>
-          <button onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
-            style={{ background: '#FEF2F2', color: '#DC5E4A' }}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Supprimer
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={togglePublic}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition active:scale-95"
+              style={trip.is_public
+                ? { background: '#E8F0E9', color: '#5A8A6A' }
+                : { background: '#F7F2EA', color: '#8A7B6A' }
+              }
+            >
+              <span>{trip.is_public ? '🌍' : '🔒'}</span>
+              {trip.is_public ? 'Public' : 'Privé'}
+            </button>
+            <button onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
+              style={{ background: '#FEF2F2', color: '#DC5E4A' }}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Supprimer
+            </button>
+          </div>
         </div>
 
         {/* Hero compact */}

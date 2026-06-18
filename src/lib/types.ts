@@ -11,10 +11,20 @@ export interface Trip {
   start_date: string | null
   end_date: string | null
   is_active: boolean
+  is_public: boolean
   cover_url: string | null
   travel_style: TravelStyle | null
   created_at: string
   updated_at: string
+}
+
+export interface Profile {
+  id: string
+  username: string | null
+  display_name: string | null
+  avatar_emoji: string
+  bio: string | null
+  created_at: string
 }
 
 export interface PlaceFolder {
