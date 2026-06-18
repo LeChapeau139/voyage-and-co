@@ -58,8 +58,8 @@ export default function CreatePlaceModal({ defaultFolderId = null, onClose, onCr
 
   return (
     <>
-      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm">
-        <div className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-3 shadow-2xl">
+      <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
+        <div className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-3 shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="mb-5 flex justify-center">
             <div className="h-1 w-10 rounded-full" style={{ background: '#E8DFD0' }} />
           </div>

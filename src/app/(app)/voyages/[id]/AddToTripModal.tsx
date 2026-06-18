@@ -69,9 +69,9 @@ export default function AddToTripModal({ tripId, onClose, onCreated }: Props) {
   )
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
       {screen === 'choice' && (
-        <div className={sheetClass}>
+        <div className={sheetClass} onClick={e => e.stopPropagation()}>
           {handle}
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-lg font-bold" style={{ color: '#2C2416' }}>Ajouter une activité</h2>
@@ -107,7 +107,7 @@ export default function AddToTripModal({ tripId, onClose, onCreated }: Props) {
       )}
 
       {screen === 'library' && (
-        <div className={sheetClass}>
+        <div className={sheetClass} onClick={e => e.stopPropagation()}>
           {handle}
           <div className="mb-4 flex items-center gap-3">
             {backBtn('choice')}
@@ -150,7 +150,7 @@ export default function AddToTripModal({ tripId, onClose, onCreated }: Props) {
       )}
 
       {screen === 'schedule' && selectedPlace && (
-        <div className={sheetClass}>
+        <div className={sheetClass} onClick={e => e.stopPropagation()}>
           {handle}
           <div className="mb-4 flex items-center gap-3">
             {backBtn('library')}

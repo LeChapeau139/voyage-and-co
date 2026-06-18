@@ -453,8 +453,8 @@ export default function TripDetailPage() {
 
         {/* Delete activity sheet */}
         {deleteTarget && (
-          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm">
-            <div className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-5 shadow-2xl">
+          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm" onClick={() => setDeleteTarget(null)}>
+            <div className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-5 shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="mb-5 flex justify-center"><div className="h-1 w-10 rounded-full" style={{ background: '#E8DFD0' }} /></div>
               <div className="mb-6 flex flex-col items-center gap-2 text-center">
                 <div className="text-4xl">🗑️</div>
@@ -479,8 +479,8 @@ export default function TripDetailPage() {
 
         {/* Delete trip sheet */}
         {confirmDelete && (
-          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm">
-            <div className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-5 shadow-2xl">
+          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDelete(false)}>
+            <div className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-5 shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="mb-5 flex justify-center"><div className="h-1 w-10 rounded-full" style={{ background: '#E8DFD0' }} /></div>
               <div className="mb-6 flex flex-col items-center gap-2 text-center">
                 <div className="text-4xl">🗑️</div>
