@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Place, PlaceFolder, ActivityType } from '@/lib/types'
 import CreatePlaceModal from './CreatePlaceModal'
-import AddPlaceToTripSheet from './AddPlaceToTripSheet'
+import PlaceActionSheet from './PlaceActionSheet'
+import FolderActionSheet from './FolderActionSheet'
 import { useCreateAction } from '@/contexts/CreateActionContext'
 import PageFade from '@/components/PageFade'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
@@ -29,6 +30,7 @@ export default function BibliothequeePage() {
   const [folderStack, setFolderStack] = useState<PlaceFolder[]>([])
   const [showModal, setShowModal] = useState(false)
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null)
+  const [folderAction, setFolderAction] = useState<PlaceFolder | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [newFolderEmoji, setNewFolderEmoji] = useState('📁')
@@ -166,21 +168,29 @@ export default function BibliothequeePage() {
                     {visibleFolders.map(folder => {
                       const count = folderItemCount(folder.id)
                       return (
-                        <button key={folder.id} onClick={() => navigateInto(folder)}
-                          className="flex items-center gap-3 rounded-2xl p-4 text-left transition active:scale-[0.97]"
-                          style={{ background: '#F5E8DF', border: '1.5px solid #EDD9C8', boxShadow: '0 2px 8px rgba(44,36,22,0.06)' }}
-                        >
-                          <span className="text-2xl">{folder.emoji}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-sm truncate" style={{ color: '#2C2416' }}>{folder.name}</p>
-                            <p className="text-xs mt-0.5" style={{ color: '#B5A89A' }}>
-                              {count > 0 ? `${count} élément${count > 1 ? 's' : ''}` : 'Vide'}
-                            </p>
-                          </div>
-                          <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} style={{ color: '#C2714A' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </button>
+                        <div key={folder.id} className="relative">
+                          <button onClick={() => navigateInto(folder)}
+                            className="flex w-full items-center gap-3 rounded-2xl p-4 text-left transition active:scale-[0.97]"
+                            style={{ background: '#F5E8DF', border: '1.5px solid #EDD9C8', boxShadow: '0 2px 8px rgba(44,36,22,0.06)' }}
+                          >
+                            <span className="text-2xl">{folder.emoji}</span>
+                            <div className="flex-1 min-w-0 pr-6">
+                              <p className="font-semibold text-sm truncate" style={{ color: '#2C2416' }}>{folder.name}</p>
+                              <p className="text-xs mt-0.5" style={{ color: '#B5A89A' }}>
+                                {count > 0 ? `${count} élément${count > 1 ? 's' : ''}` : 'Vide'}
+                              </p>
+                            </div>
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); setFolderAction(folder) }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full transition active:scale-90"
+                            style={{ background: '#EDD9C8', color: '#C2714A' }}
+                          >
+                            <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+                              <circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" />
+                            </svg>
+                          </button>
+                        </div>
                       )
                     })}
                   </div>
@@ -301,10 +311,27 @@ export default function BibliothequeePage() {
         />
       )}
       {selectedPlace && (
-        <AddPlaceToTripSheet
+        <PlaceActionSheet
           place={selectedPlace}
           onClose={() => setSelectedPlace(null)}
-          onDone={() => setSelectedPlace(null)}
+          onDone={() => { setSelectedPlace(null); fetchAll() }}
+        />
+      )}
+      {folderAction && (
+        <FolderActionSheet
+          folder={folderAction}
+          itemCount={folderItemCount(folderAction.id)}
+          onClose={() => setFolderAction(null)}
+          onRenamed={updated => {
+            setFolders(prev => prev.map(f => f.id === updated.id ? updated : f))
+            setFolderAction(null)
+          }}
+          onDeleted={folderId => {
+            setFolders(prev => prev.filter(f => f.id !== folderId))
+            setFolderStack(prev => prev.filter(f => f.id !== folderId))
+            setFolderAction(null)
+            fetchAll()
+          }}
         />
       )}
     </PageFade>
