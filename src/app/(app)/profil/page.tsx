@@ -46,10 +46,10 @@ export default function ProfilPage() {
     if (!user) return
     async function fetchAll() {
       const [tripsRes, memoriesRes, placesRes, destinationsRes, profileRes] = await Promise.all([
-        supabase.from('trips').select('id', { count: 'exact', head: true }),
-        supabase.from('activities').select('id', { count: 'exact', head: true }).eq('entry_type', 'memory'),
-        supabase.from('places').select('id', { count: 'exact', head: true }),
-        supabase.from('trips').select('destination').not('destination', 'is', null),
+        supabase.from('trips').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
+        supabase.from('activities').select('id', { count: 'exact', head: true }).eq('entry_type', 'memory').eq('user_id', user!.id),
+        supabase.from('places').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
+        supabase.from('trips').select('destination').eq('user_id', user!.id).not('destination', 'is', null),
         supabase.from('profiles').select('*').eq('id', user!.id).single(),
       ])
       const countryNames = [

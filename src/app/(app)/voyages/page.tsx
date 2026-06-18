@@ -122,7 +122,13 @@ export default function VoyagesPage() {
   const { toast } = useToast()
 
   const fetchTrips = useCallback(async () => {
-    const { data } = await supabase.from('trips').select('*').order('created_at', { ascending: false })
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
     setTrips(data ?? [])
     setLoading(false)
   }, [])
