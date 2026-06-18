@@ -7,7 +7,9 @@ import type { Trip, Activity, ActivityType } from '@/lib/types'
 import { useCreateAction } from '@/contexts/CreateActionContext'
 import { useToast } from '@/contexts/ToastContext'
 import AddMemoryModal from './AddMemoryModal'
+import InviteMemberSheet from './InviteMemberSheet'
 import PageFade from '@/components/PageFade'
+import type { TripMember, Profile } from '@/lib/types'
 
 const TYPE_CONFIG: Record<ActivityType, { emoji: string; color: string; dot: string }> = {
   food:      { emoji: '🍽️', color: '#FEF3C7', dot: '#F59E0B' },
@@ -174,16 +176,33 @@ export default function TripDetailPage() {
   const [deleteTarget, setDeleteTarget] = useState<Activity | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [showInvite, setShowInvite] = useState(false)
+  const [members, setMembers] = useState<(TripMember & { profile?: Profile })[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { setAction } = useCreateAction()
   const { toast } = useToast()
 
   const fetchData = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    setCurrentUserId(user?.id ?? null)
+
     const { data: t } = await supabase.from('trips').select('*').eq('id', id).single()
     setTrip(t)
     if (t) {
-      const { data: acts } = await supabase
-        .from('activities').select('*').eq('trip_id', id).order('scheduled_at', { ascending: true })
-      setActivities(acts ?? [])
+      const [actsRes, membersRes] = await Promise.all([
+        supabase.from('activities').select('*').eq('trip_id', id).order('scheduled_at', { ascending: true }),
+        supabase.from('trip_members').select('*').eq('trip_id', id).neq('status', 'declined'),
+      ])
+      setActivities(actsRes.data ?? [])
+
+      const membersList = membersRes.data ?? []
+      if (membersList.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles').select('*').in('id', membersList.map(m => m.user_id))
+        setMembers(membersList.map(m => ({ ...m, profile: profiles?.find(p => p.id === m.user_id) })))
+      } else {
+        setMembers([])
+      }
     }
     setLoading(false)
   }
@@ -207,6 +226,23 @@ export default function TripDetailPage() {
     toast.success(newValue ? 'Voyage rendu public 🌍' : 'Voyage rendu privé 🔒')
     fetchData()
   }
+
+  const leaveTrip = async () => {
+    if (!currentUserId) return
+    await supabase.from('trip_members').delete().eq('trip_id', id).eq('user_id', currentUserId)
+    toast.success('Tu as quitté ce voyage')
+    router.replace('/voyages')
+  }
+
+  const removeMember = async (userId: string) => {
+    await supabase.from('trip_members').delete().eq('trip_id', id).eq('user_id', userId)
+    toast.success('Membre retiré')
+    fetchData()
+  }
+
+  const isOwner = trip?.user_id === currentUserId
+  const acceptedMembers = members.filter(m => m.status === 'accepted')
+  const pendingMembers = members.filter(m => m.status === 'pending')
 
   const deleteTrip = async () => {
     setDeleting(true)
@@ -266,25 +302,33 @@ export default function TripDetailPage() {
             Mes voyages
           </button>
           <div className="flex items-center gap-2">
-            <button onClick={togglePublic}
-              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition active:scale-95"
-              style={trip.is_public
-                ? { background: '#E8F0E9', color: '#5A8A6A' }
-                : { background: '#F7F2EA', color: '#8A7B6A' }
-              }
-            >
-              <span>{trip.is_public ? '🌍' : '🔒'}</span>
-              {trip.is_public ? 'Public' : 'Privé'}
-            </button>
-            <button onClick={() => setConfirmDelete(true)}
-              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
-              style={{ background: '#FEF2F2', color: '#DC5E4A' }}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Supprimer
-            </button>
+            {isOwner ? (
+              <>
+                <button onClick={togglePublic}
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition active:scale-95"
+                  style={trip.is_public ? { background: '#E8F0E9', color: '#5A8A6A' } : { background: '#F7F2EA', color: '#8A7B6A' }}
+                >
+                  <span>{trip.is_public ? '🌍' : '🔒'}</span>
+                  {trip.is_public ? 'Public' : 'Privé'}
+                </button>
+                <button onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
+                  style={{ background: '#FEF2F2', color: '#DC5E4A' }}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Supprimer
+                </button>
+              </>
+            ) : (
+              <button onClick={leaveTrip}
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
+                style={{ background: '#FEF2F2', color: '#DC5E4A' }}
+              >
+                Quitter
+              </button>
+            )}
           </div>
         </div>
 
@@ -304,15 +348,44 @@ export default function TripDetailPage() {
           >
             {trip.is_active && <div className="absolute inset-0 rounded-3xl ring-2 ring-[#C2714A]" />}
             <div className="absolute bottom-0 left-0 right-0 p-4">
-              <div className="mb-1 flex items-center gap-2">
-                {trip.is_active
-                  ? <span className="rounded-full bg-[#C2714A] px-2.5 py-0.5 text-[10px] font-bold text-white">✈️ En cours</span>
-                  : <button onClick={activate} className="rounded-full bg-white/85 px-2.5 py-0.5 text-[10px] font-semibold backdrop-blur-sm" style={{ color: '#2C2416' }}>Activer</button>
+              <div className="mb-1 flex items-center gap-2 flex-wrap">
+                {isOwner
+                  ? trip.is_active
+                    ? <span className="rounded-full bg-[#C2714A] px-2.5 py-0.5 text-[10px] font-bold text-white">✈️ En cours</span>
+                    : <button onClick={activate} className="rounded-full bg-white/85 px-2.5 py-0.5 text-[10px] font-semibold backdrop-blur-sm" style={{ color: '#2C2416' }}>Activer</button>
+                  : <span className="rounded-full bg-white/25 px-2.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">👥 Collaborateur</span>
                 }
                 <span className="text-[10px] text-white/60">{activities.length} souvenir{activities.length !== 1 ? 's' : ''}</span>
               </div>
               <h1 className="text-xl font-bold text-white drop-shadow-sm">{trip.name}</h1>
               {trip.destination && <p className="text-xs text-white/70">📍 {trip.destination}</p>}
+
+              {/* Membres row */}
+              <div className="mt-2 flex items-center gap-1.5">
+                {acceptedMembers.map(m => (
+                  <div key={m.id}
+                    className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full text-xs"
+                    style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', border: '1.5px solid rgba(255,255,255,0.6)' }}
+                    title={m.profile?.display_name || m.profile?.username || ''}
+                  >
+                    {m.profile?.avatar_url
+                      ? <img src={m.profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                      : m.profile?.avatar_emoji || '🧳'
+                    }
+                  </div>
+                ))}
+                {pendingMembers.length > 0 && (
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[9px] text-white/70 backdrop-blur-sm">
+                    {pendingMembers.length} en attente
+                  </span>
+                )}
+                {isOwner && (
+                  <button onClick={() => setShowInvite(true)}
+                    className="flex h-6 w-6 items-center justify-center rounded-full bg-white/25 text-white backdrop-blur-sm transition active:scale-90 text-sm"
+                    title="Inviter"
+                  >+</button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -413,6 +486,15 @@ export default function TripDetailPage() {
             activity={editActivity ?? undefined}
             onClose={() => { setShowModal(false); setEditActivity(null) }}
             onCreated={() => { setShowModal(false); setEditActivity(null); fetchData() }}
+          />
+        )}
+
+        {/* Invite member sheet */}
+        {showInvite && (
+          <InviteMemberSheet
+            tripId={trip.id}
+            onClose={() => setShowInvite(false)}
+            onInvited={() => { setShowInvite(false); fetchData() }}
           />
         )}
       </div>

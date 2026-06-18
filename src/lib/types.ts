@@ -18,6 +18,16 @@ export interface Trip {
   updated_at: string
 }
 
+export interface TripMember {
+  id: string
+  trip_id: string
+  user_id: string
+  invited_by: string
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+  profile?: Profile
+}
+
 export interface Follow {
   id: string
   follower_id: string
