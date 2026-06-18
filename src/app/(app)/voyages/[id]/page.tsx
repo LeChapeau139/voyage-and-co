@@ -178,6 +178,7 @@ export default function TripDetailPage() {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [showInvite, setShowInvite] = useState(false)
   const [members, setMembers] = useState<(TripMember & { profile?: Profile })[]>([])
+  const [removeConfirm, setRemoveConfirm] = useState<(TripMember & { profile?: Profile }) | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { setAction } = useCreateAction()
   const { toast } = useToast()
@@ -363,8 +364,9 @@ export default function TripDetailPage() {
               {/* Membres row */}
               <div className="mt-2 flex items-center gap-1.5">
                 {acceptedMembers.map(m => (
-                  <div key={m.id}
-                    className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full text-xs"
+                  <button key={m.id}
+                    onClick={() => isOwner ? setRemoveConfirm(m) : undefined}
+                    className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full text-xs transition active:scale-90"
                     style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', border: '1.5px solid rgba(255,255,255,0.6)' }}
                     title={m.profile?.display_name || m.profile?.username || ''}
                   >
@@ -372,13 +374,21 @@ export default function TripDetailPage() {
                       ? <img src={m.profile.avatar_url} alt="" className="h-full w-full object-cover" />
                       : m.profile?.avatar_emoji || '🧳'
                     }
-                  </div>
+                  </button>
                 ))}
-                {pendingMembers.length > 0 && (
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[9px] text-white/70 backdrop-blur-sm">
-                    {pendingMembers.length} en attente
-                  </span>
-                )}
+                {pendingMembers.map(m => (
+                  <button key={m.id}
+                    onClick={() => isOwner ? setRemoveConfirm(m) : undefined}
+                    className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full text-xs transition active:scale-90 opacity-50"
+                    style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', border: '1.5px dashed rgba(255,255,255,0.6)' }}
+                    title={`${m.profile?.display_name || m.profile?.username || 'Invitation'} (en attente)`}
+                  >
+                    {m.profile?.avatar_url
+                      ? <img src={m.profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                      : m.profile?.avatar_emoji || '🧳'
+                    }
+                  </button>
+                ))}
                 {isOwner && (
                   <button onClick={() => setShowInvite(true)}
                     className="flex h-6 w-6 items-center justify-center rounded-full bg-white/25 text-white backdrop-blur-sm transition active:scale-90 text-sm"
@@ -496,6 +506,57 @@ export default function TripDetailPage() {
             onClose={() => setShowInvite(false)}
             onInvited={() => { setShowInvite(false); fetchData() }}
           />
+        )}
+
+        {/* Remove member confirmation */}
+        {removeConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm" onClick={() => setRemoveConfirm(null)}>
+            <div
+              className="animate-[slideUp_0.28s_ease-out] w-full max-w-lg rounded-t-[2rem] bg-white px-5 pb-10 pt-3 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="mb-4 flex justify-center">
+                <div className="h-1 w-10 rounded-full" style={{ background: '#E8DFD0' }} />
+              </div>
+              <div className="mb-5 flex flex-col items-center gap-3 text-center">
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-3xl"
+                  style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)' }}
+                >
+                  {removeConfirm.profile?.avatar_url
+                    ? <img src={removeConfirm.profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                    : removeConfirm.profile?.avatar_emoji || '🧳'
+                  }
+                </div>
+                <div>
+                  <p className="font-bold text-base" style={{ color: '#2C2416' }}>
+                    Retirer {removeConfirm.profile?.display_name || removeConfirm.profile?.username || 'ce voyageur'} ?
+                  </p>
+                  <p className="text-sm mt-1" style={{ color: '#8A7B6A' }}>
+                    {removeConfirm.status === 'pending'
+                      ? "L'invitation sera annulée."
+                      : "Il perdra l'accès à ce voyage."
+                    }
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setRemoveConfirm(null)}
+                  className="flex-1 rounded-2xl py-3 text-sm font-semibold"
+                  style={{ background: '#F7F2EA', color: '#8A7B6A' }}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={async () => { await removeMember(removeConfirm.user_id); setRemoveConfirm(null) }}
+                  className="flex-1 rounded-2xl py-3 text-sm font-semibold text-white"
+                  style={{ background: '#D9603B' }}
+                >
+                  {removeConfirm.status === 'pending' ? 'Annuler l\'invitation' : 'Retirer'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </PageFade>
