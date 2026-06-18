@@ -71,7 +71,6 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         // Read date fields (multiple fallbacks)
         const dateExif = await exifr.parse(toAdd[0], {
           pick: ['DateTimeOriginal', 'DateTime', 'CreateDate', 'DateCreated'],
-          silentErrors: true,
         }).catch(() => null)
 
         // Read GPS via dedicated method (handles GPS IFD properly)
