@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { useToast } from '@/contexts/ToastContext'
 import type { Profile } from '@/lib/types'
 import PageFade from '@/components/PageFade'
+import FollowListSheet from '@/components/FollowListSheet'
 
 const WorldMap = dynamic(() => import('@/components/WorldMap'), { ssr: false })
 
@@ -31,7 +32,9 @@ export default function ProfilPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const [followersCount, setFollowersCount] = useState(0)
+  const [followerIds, setFollowerIds] = useState<string[]>([])
   const [following, setFollowing] = useState<(Profile & { follow_id: string })[]>([])
+  const [followSheet, setFollowSheet] = useState<'followers' | 'following' | null>(null)
 
   // Edit form state
   const [editUsername, setEditUsername] = useState('')
@@ -54,7 +57,7 @@ export default function ProfilPage() {
         supabase.from('places').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
         supabase.from('trips').select('destination').eq('user_id', user!.id).not('destination', 'is', null),
         supabase.from('profiles').select('*').eq('id', user!.id).single(),
-        supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', user!.id),
+        supabase.from('follows').select('id, follower_id').eq('following_id', user!.id),
         supabase.from('follows').select('id, following_id').eq('follower_id', user!.id),
       ])
       const countryNames = [
@@ -72,7 +75,9 @@ export default function ProfilPage() {
         countries: countryNames.length,
       })
       if (profileRes.data) setProfile(profileRes.data)
-      setFollowersCount(followersRes.count ?? 0)
+      const fIds = (followersRes.data ?? []).map(f => f.follower_id)
+      setFollowersCount(fIds.length)
+      setFollowerIds(fIds)
 
       // Fetch profiles of people we follow
       const followingIds = (followingRes.data ?? []).map(f => f.following_id)
@@ -218,15 +223,15 @@ export default function ProfilPage() {
 
           {/* Followers / Following counts */}
           <div className="mt-2 flex items-center gap-5">
-            <div className="text-center">
+            <button onClick={() => setFollowSheet('followers')} className="text-center transition active:scale-95">
               <p className="text-base font-bold" style={{ color: '#2C2416' }}>{followersCount}</p>
               <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#B5A89A' }}>Abonnés</p>
-            </div>
+            </button>
             <div className="h-6 w-px" style={{ background: '#E8DFD0' }} />
-            <div className="text-center">
+            <button onClick={() => setFollowSheet('following')} className="text-center transition active:scale-95">
               <p className="text-base font-bold" style={{ color: '#2C2416' }}>{following.length}</p>
               <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#B5A89A' }}>Abonnements</p>
-            </div>
+            </button>
           </div>
 
           <button
@@ -323,6 +328,14 @@ export default function ProfilPage() {
           Se déconnecter
         </button>
       </div>
+
+      {followSheet && (
+        <FollowListSheet
+          title={followSheet === 'followers' ? `${followersCount} abonné${followersCount > 1 ? 's' : ''}` : `${following.length} abonnement${following.length > 1 ? 's' : ''}`}
+          userIds={followSheet === 'followers' ? followerIds : following.map(f => f.id)}
+          onClose={() => setFollowSheet(null)}
+        />
+      )}
 
       {/* Edit profile sheet */}
       {editingProfile && (

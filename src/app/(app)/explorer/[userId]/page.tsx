@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Profile, Trip, TravelStyle } from '@/lib/types'
 import PageFade from '@/components/PageFade'
+import FollowListSheet from '@/components/FollowListSheet'
 
 const STYLE_CONFIG: Record<TravelStyle, { emoji: string; label: string }> = {
   solo:    { emoji: '🧳', label: 'Solo' },
@@ -23,9 +24,12 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true)
   const [isFollowing, setIsFollowing] = useState(false)
   const [followersCount, setFollowersCount] = useState(0)
+  const [followerIds, setFollowerIds] = useState<string[]>([])
+  const [followingIds, setFollowingIds] = useState<string[]>([])
   const [followingCount, setFollowingCount] = useState(0)
   const [followLoading, setFollowLoading] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [followSheet, setFollowSheet] = useState<'followers' | 'following' | null>(null)
 
   useEffect(() => {
     async function fetchData() {
@@ -35,15 +39,19 @@ export default function UserProfilePage() {
       const [profileRes, tripsRes, followersRes, followingRes, isFollowingRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).single(),
         supabase.from('trips').select('*').eq('user_id', userId).eq('is_public', true).order('created_at', { ascending: false }),
-        supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', userId),
-        supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', userId),
+        supabase.from('follows').select('id, follower_id').eq('following_id', userId),
+        supabase.from('follows').select('id, following_id').eq('follower_id', userId),
         user ? supabase.from('follows').select('id').eq('follower_id', user.id).eq('following_id', userId).maybeSingle() : Promise.resolve({ data: null }),
       ])
 
       setProfile(profileRes.data)
       setTrips(tripsRes.data ?? [])
-      setFollowersCount(followersRes.count ?? 0)
-      setFollowingCount(followingRes.count ?? 0)
+      const fIds = (followersRes.data ?? []).map(f => f.follower_id)
+      const fgIds = (followingRes.data ?? []).map(f => f.following_id)
+      setFollowerIds(fIds)
+      setFollowingIds(fgIds)
+      setFollowersCount(fIds.length)
+      setFollowingCount(fgIds.length)
       setIsFollowing(!!isFollowingRes.data)
       setLoading(false)
     }
@@ -132,15 +140,15 @@ export default function UserProfilePage() {
 
           {/* Followers / Following */}
           <div className="mt-1 flex items-center gap-5">
-            <div className="text-center">
+            <button onClick={() => setFollowSheet('followers')} className="text-center transition active:scale-95">
               <p className="text-base font-bold" style={{ color: '#2C2416' }}>{followersCount}</p>
               <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#B5A89A' }}>Abonnés</p>
-            </div>
+            </button>
             <div className="h-6 w-px" style={{ background: '#E8DFD0' }} />
-            <div className="text-center">
+            <button onClick={() => setFollowSheet('following')} className="text-center transition active:scale-95">
               <p className="text-base font-bold" style={{ color: '#2C2416' }}>{followingCount}</p>
               <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#B5A89A' }}>Abonnements</p>
-            </div>
+            </button>
           </div>
 
           {/* Follow button */}
@@ -201,6 +209,13 @@ export default function UserProfilePage() {
           )}
         </div>
       </div>
+      {followSheet && (
+        <FollowListSheet
+          title={followSheet === 'followers' ? `${followersCount} abonné${followersCount > 1 ? 's' : ''}` : `${followingCount} abonnement${followingCount > 1 ? 's' : ''}`}
+          userIds={followSheet === 'followers' ? followerIds : followingIds}
+          onClose={() => setFollowSheet(null)}
+        />
+      )}
     </PageFade>
   )
 }
