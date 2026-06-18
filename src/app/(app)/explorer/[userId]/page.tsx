@@ -145,7 +145,7 @@ export default function UserProfilePage() {
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {trips.map(trip => (
-                <PublicTripCard key={trip.id} trip={trip} />
+                <PublicTripCard key={trip.id} trip={trip} userId={userId} />
               ))}
             </div>
           )}
@@ -155,10 +155,11 @@ export default function UserProfilePage() {
   )
 }
 
-function PublicTripCard({ trip }: { trip: Trip }) {
+function PublicTripCard({ trip, userId }: { trip: Trip; userId: string }) {
   return (
+    <Link href={`/explorer/${userId}/trips/${trip.id}`}>
     <div
-      className="relative overflow-hidden rounded-xl"
+      className="relative overflow-hidden rounded-xl transition active:scale-[0.94]"
       style={{ aspectRatio: '3/4', boxShadow: '0 2px 8px rgba(44,36,22,0.13)' }}
     >
       {trip.cover_url ? (
@@ -186,5 +187,6 @@ function PublicTripCard({ trip }: { trip: Trip }) {
         )}
       </div>
     </div>
+    </Link>
   )
 }
