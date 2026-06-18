@@ -86,6 +86,7 @@ export interface Activity {
   location_lat: number | null
   location_lng: number | null
   photos: string[]
+  cost: number | null
   is_expandable: boolean
   photo_details: PhotoDetail[]
   created_at: string

@@ -50,6 +50,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
   const [exifEmpty, setExifEmpty] = useState(false)
   const [readingExif, setReadingExif] = useState(false)
 
+  const [cost, setCost] = useState<string>(activity?.cost != null ? String(activity.cost) : '')
   const [isExpandable, setIsExpandable] = useState(activity?.is_expandable ?? false)
   const [classifying, setClassifying] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -166,6 +167,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         location_name: locationName.trim() || null,
         scheduled_at: scheduledAt,
         photos: allPhotos,
+        cost: cost.trim() ? parseFloat(cost.replace(',', '.')) : null,
         is_expandable: isExpandable,
       }).eq('id', activity.id)
       if (updateError) { setError(updateError.message); setUploading(false); return }
@@ -181,6 +183,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         description: note.trim() || null,
         location_name: locationName.trim() || null,
         photos: allPhotos,
+        cost: cost.trim() ? parseFloat(cost.replace(',', '.')) : null,
         is_expandable: isExpandable,
       })
       if (insertError) { setError(insertError.message); setUploading(false); return }
@@ -343,6 +346,22 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
             value={note} onChange={e => setNote(e.target.value)} rows={2}
             className={`${inputClass} resize-none`} style={inputStyle}
           />
+
+          {/* Coût */}
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#B5A89A' }}>€</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              placeholder="Coût (optionnel)"
+              value={cost}
+              onChange={e => setCost(e.target.value)}
+              min="0"
+              step="0.01"
+              className={`${inputClass} pl-8`}
+              style={inputStyle}
+            />
+          </div>
 
           {/* Toggle page détaillée */}
           <div className="flex items-center justify-between rounded-2xl px-4 py-3"

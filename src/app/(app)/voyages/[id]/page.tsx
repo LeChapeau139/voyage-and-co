@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -194,6 +194,8 @@ export default function TripDetailPage() {
   const [showInvite, setShowInvite] = useState(false)
   const [members, setMembers] = useState<(TripMember & { profile?: Profile })[]>([])
   const [removeConfirm, setRemoveConfirm] = useState<(TripMember & { profile?: Profile }) | null>(null)
+  const [uploadingCover, setUploadingCover] = useState(false)
+  const coverFileRef = useRef<HTMLInputElement>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { setAction } = useCreateAction()
   const { toast } = useToast()
@@ -241,6 +243,25 @@ export default function TripDetailPage() {
     await supabase.from('trips').update({ is_public: newValue }).eq('id', id)
     toast.success(newValue ? 'Voyage rendu public 🌍' : 'Voyage rendu privé 🔒')
     fetchData()
+  }
+
+  const changeCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingCover(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/upload-activity-photo', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (data.url) {
+      await supabase.from('trips').update({ cover_url: data.url }).eq('id', id)
+      toast.success('Cover mise à jour 📸')
+      fetchData()
+    } else {
+      toast.error('Échec du téléversement')
+    }
+    setUploadingCover(false)
+    e.target.value = ''
   }
 
   const leaveTrip = async () => {
@@ -359,6 +380,22 @@ export default function TripDetailPage() {
             ? <img src={trip.cover_url} alt={trip.name} className="h-full w-full object-cover" />
             : <div className="h-full w-full" style={{ background: 'linear-gradient(135deg, #E8D5C0, #C4956A)' }} />
           }
+          {isOwner && (
+            <button
+              onClick={() => coverFileRef.current?.click()}
+              disabled={uploadingCover}
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition active:scale-90 disabled:opacity-50"
+            >
+              {uploadingCover
+                ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                : <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+              }
+            </button>
+          )}
+          <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={changeCover} />
           <div className="relative -mt-[180px] h-[180px]"
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.65) 100%)' }}
           >
@@ -447,6 +484,58 @@ export default function TripDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Budget */}
+        {(() => {
+          const withCost = activities.filter(a => a.cost != null && a.cost > 0)
+          if (withCost.length === 0) return null
+          const total = withCost.reduce((sum, a) => sum + (a.cost ?? 0), 0)
+          const byType = withCost.reduce<Record<string, number>>((acc, a) => {
+            acc[a.activity_type] = (acc[a.activity_type] ?? 0) + (a.cost ?? 0)
+            return acc
+          }, {})
+          const TYPE_EMOJI: Record<string, string> = { food: '🍽️', culture: '🏛️', transport: '🚌', hotel: '🏨', nature: '🌿', other: '📍' }
+          const TYPE_LABEL: Record<string, string> = { food: 'Repas', culture: 'Culture', transport: 'Transport', hotel: 'Séjour', nature: 'Nature', other: 'Autre' }
+          return (
+            <div className="mx-5 mt-2 mb-6 rounded-3xl overflow-hidden"
+              style={{ background: '#FFFFFF', boxShadow: '0 2px 12px rgba(44,36,22,0.08)' }}
+            >
+              <div className="px-4 pt-4 pb-3 flex items-center justify-between"
+                style={{ borderBottom: '1px solid #F0E8DC' }}
+              >
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Budget du voyage</p>
+                <p className="text-lg font-bold" style={{ color: '#2C2416' }}>
+                  {total % 1 === 0 ? total : total.toFixed(2)} €
+                </p>
+              </div>
+              <div className="px-4 py-3 flex flex-col gap-2">
+                {Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, amount]) => (
+                  <div key={type} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{TYPE_EMOJI[type] ?? '📍'}</span>
+                      <span className="text-sm" style={{ color: '#8A7B6A' }}>{TYPE_LABEL[type] ?? type}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 rounded-full" style={{
+                        width: `${Math.round((amount / total) * 80)}px`,
+                        background: '#F5E8DF',
+                        minWidth: '8px',
+                      }}>
+                        <div className="h-full rounded-full" style={{
+                          width: `${Math.round((amount / total) * 100)}%`,
+                          background: '#C2714A',
+                        }} />
+                      </div>
+                      <span className="text-sm font-semibold w-16 text-right" style={{ color: '#2C2416' }}>
+                        {amount % 1 === 0 ? amount : amount.toFixed(2)} €
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Lightbox */}
         {lightboxSrc && <PhotoLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
