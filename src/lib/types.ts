@@ -68,6 +68,11 @@ export interface Place {
   updated_at: string
 }
 
+export interface PhotoDetail {
+  url: string
+  caption: string | null
+}
+
 export interface Activity {
   id: string
   trip_id: string
@@ -81,6 +86,8 @@ export interface Activity {
   location_lat: number | null
   location_lng: number | null
   photos: string[]
+  is_expandable: boolean
+  photo_details: PhotoDetail[]
   created_at: string
   updated_at: string
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Trip, Activity, ActivityType } from '@/lib/types'
 import { useCreateAction } from '@/contexts/CreateActionContext'
@@ -84,11 +85,13 @@ function PhotoGrid({ photos, onPhotoClick }: { photos: string[]; onPhotoClick: (
 
 function MemoryCard({
   activity,
+  tripId,
   onPhotoClick,
   onEdit,
   onDelete,
 }: {
   activity: Activity
+  tripId: string
   onPhotoClick: (src: string) => void
   onEdit: (a: Activity) => void
   onDelete: (a: Activity) => void
@@ -143,6 +146,18 @@ function MemoryCard({
         )}
         {activity.location_name && (
           <p className="mt-1.5 text-xs font-medium" style={{ color: '#B5A89A' }}>📍 {activity.location_name}</p>
+        )}
+        {activity.is_expandable && (
+          <Link href={`/voyages/${tripId}/activities/${activity.id}`}
+            className="mt-2.5 flex items-center gap-1 text-xs font-semibold transition active:opacity-70"
+            style={{ color: '#C2714A' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <span>Voir la page détaillée</span>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
         )}
       </div>
     </div>
@@ -421,6 +436,7 @@ export default function TripDetailPage() {
                     <MemoryCard
                       key={act.id}
                       activity={act}
+                      tripId={id}
                       onPhotoClick={src => setLightboxSrc(src)}
                       onEdit={a => setEditActivity(a)}
                       onDelete={a => setDeleteTarget(a)}

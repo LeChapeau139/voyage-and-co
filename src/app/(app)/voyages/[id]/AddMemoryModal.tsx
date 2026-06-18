@@ -50,6 +50,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
   const [exifEmpty, setExifEmpty] = useState(false)
   const [readingExif, setReadingExif] = useState(false)
 
+  const [isExpandable, setIsExpandable] = useState(activity?.is_expandable ?? false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -153,6 +154,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         location_name: locationName.trim() || null,
         scheduled_at: scheduledAt,
         photos: allPhotos,
+        is_expandable: isExpandable,
       }).eq('id', activity.id)
       if (updateError) { setError(updateError.message); setUploading(false); return }
       toast.success('Souvenir modifié ✏️')
@@ -167,6 +169,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         description: note.trim() || null,
         location_name: locationName.trim() || null,
         photos: allPhotos,
+        is_expandable: isExpandable,
       })
       if (insertError) { setError(insertError.message); setUploading(false); return }
       toast.success('Souvenir publié 📸')
@@ -317,6 +320,24 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
             value={note} onChange={e => setNote(e.target.value)} rows={2}
             className={`${inputClass} resize-none`} style={inputStyle}
           />
+
+          {/* Toggle page détaillée */}
+          <div className="flex items-center justify-between rounded-2xl px-4 py-3"
+            style={{ background: isExpandable ? '#FEF6F2' : '#FAFAF7', border: `1.5px solid ${isExpandable ? '#C2714A' : '#E8DFD0'}` }}
+          >
+            <div className="min-w-0 flex-1 pr-3">
+              <p className="text-sm font-semibold" style={{ color: '#2C2416' }}>Page détaillée 📖</p>
+              <p className="text-xs leading-snug mt-0.5" style={{ color: '#8A7B6A' }}>
+                Ajoute des photos et anecdotes supplémentaires après création
+              </p>
+            </div>
+            <button type="button" onClick={() => setIsExpandable(v => !v)}
+              className="relative h-6 w-11 flex-shrink-0 rounded-full transition-colors duration-200"
+              style={{ background: isExpandable ? '#C2714A' : '#D4C9B8' }}
+            >
+              <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${isExpandable ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
 
           {error && <p className="text-sm" style={{ color: '#DC5E4A' }}>{error}</p>}
 
