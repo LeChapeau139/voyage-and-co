@@ -51,6 +51,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
   const [readingExif, setReadingExif] = useState(false)
 
   const [isExpandable, setIsExpandable] = useState(activity?.is_expandable ?? false)
+  const [classifying, setClassifying] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -68,6 +69,17 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
     // Auto-fill from first photo only, in create mode
     if (!isEdit && newFiles.length === 0 && toAdd.length > 0) {
       setReadingExif(true)
+      setClassifying(true)
+
+      // Classify activity type via Gemini Vision (parallel with EXIF)
+      const classifyFd = new FormData()
+      classifyFd.append('file', toAdd[0])
+      fetch('/api/classify-activity', { method: 'POST', body: classifyFd })
+        .then(r => r.json())
+        .then(data => { if (data.type) setType(data.type) })
+        .catch(() => {})
+        .finally(() => setClassifying(false))
+
       try {
         // Read date fields (multiple fallbacks)
         const dateExif = await exifr.parse(toAdd[0], {
@@ -268,20 +280,31 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
           )}
 
           {/* Type */}
-          <div className="grid grid-cols-6 gap-1.5">
-            {TYPES.map(t => (
-              <button key={t.value} type="button" onClick={() => setType(t.value)}
-                className="flex flex-col items-center gap-0.5 rounded-xl py-2 text-[10px] font-semibold transition active:scale-95"
-                style={{
-                  background: type === t.value ? '#F5E8DF' : '#FAFAF7',
-                  border: `1.5px solid ${type === t.value ? '#C2714A' : '#E8DFD0'}`,
-                  color: type === t.value ? '#C2714A' : '#8A7B6A',
-                }}
+          <div className="relative">
+            <div className="grid grid-cols-6 gap-1.5">
+              {TYPES.map(t => (
+                <button key={t.value} type="button" onClick={() => setType(t.value)}
+                  className="flex flex-col items-center gap-0.5 rounded-xl py-2 text-[10px] font-semibold transition active:scale-95"
+                  style={{
+                    background: type === t.value ? '#F5E8DF' : '#FAFAF7',
+                    border: `1.5px solid ${type === t.value ? '#C2714A' : '#E8DFD0'}`,
+                    color: type === t.value ? '#C2714A' : '#8A7B6A',
+                    opacity: classifying ? 0.5 : 1,
+                  }}
+                >
+                  <span className="text-lg">{t.emoji}</span>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {classifying && (
+              <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-xl"
+                style={{ background: 'rgba(250,248,245,0.75)' }}
               >
-                <span className="text-lg">{t.emoji}</span>
-                {t.label}
-              </button>
-            ))}
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#E8DFD0] border-t-[#C2714A]" />
+                <span className="text-[10px] font-semibold" style={{ color: '#C2714A' }}>Détection...</span>
+              </div>
+            )}
           </div>
 
           {/* Title */}
