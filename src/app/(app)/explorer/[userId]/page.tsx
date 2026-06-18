@@ -87,10 +87,13 @@ export default function UserProfilePage() {
         {/* Avatar + infos */}
         <div className="flex flex-col items-center gap-2 px-5 pb-6">
           <div
-            className="flex h-24 w-24 items-center justify-center rounded-full text-4xl shadow-lg"
+            className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full text-4xl shadow-lg"
             style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', boxShadow: '0 8px 24px rgba(194,113,74,0.2)' }}
           >
-            {profile.avatar_emoji || '🧳'}
+            {profile.avatar_url
+              ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+              : profile.avatar_emoji || '🧳'
+            }
           </div>
           <p className="text-xl font-bold" style={{ color: '#2C2416' }}>
             {profile.display_name || profile.username || 'Voyageur'}

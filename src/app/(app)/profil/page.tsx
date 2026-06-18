@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -34,9 +34,13 @@ export default function ProfilPage() {
   const [editUsername, setEditUsername] = useState('')
   const [editDisplayName, setEditDisplayName] = useState('')
   const [editAvatarEmoji, setEditAvatarEmoji] = useState('🧳')
+  const [editAvatarUrl, setEditAvatarUrl] = useState<string | null>(null)
+  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null)
   const [editBio, setEditBio] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [usernameError, setUsernameError] = useState('')
+  const photoRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!user) return
@@ -73,9 +77,26 @@ export default function ProfilPage() {
     setEditUsername(profile?.username ?? '')
     setEditDisplayName(profile?.display_name ?? '')
     setEditAvatarEmoji(profile?.avatar_emoji ?? '🧳')
+    setEditAvatarUrl(profile?.avatar_url ?? null)
+    setEditAvatarPreview(profile?.avatar_url ?? null)
     setEditBio(profile?.bio ?? '')
     setUsernameError('')
     setEditingProfile(true)
+  }
+
+  const handleAvatarPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setEditAvatarPreview(URL.createObjectURL(file))
+    setUploadingPhoto(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/upload-activity-photo', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (data.url) setEditAvatarUrl(data.url)
+    else toast.error('Échec du téléversement')
+    setUploadingPhoto(false)
+    e.target.value = ''
   }
 
   const saveProfile = async () => {
@@ -106,6 +127,7 @@ export default function ProfilPage() {
       username,
       display_name: editDisplayName.trim() || null,
       avatar_emoji: editAvatarEmoji,
+      avatar_url: editAvatarUrl,
       bio: editBio.trim() || null,
     }
 
@@ -145,10 +167,13 @@ export default function ProfilPage() {
         {/* Avatar + identité */}
         <div className="mb-6 flex flex-col items-center gap-2">
           <div
-            className="flex h-20 w-20 items-center justify-center rounded-full text-4xl shadow-lg"
+            className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full text-4xl shadow-lg"
             style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', boxShadow: '0 8px 24px rgba(194,113,74,0.2)' }}
           >
-            {profile?.avatar_emoji ?? '🧳'}
+            {profile?.avatar_url
+              ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+              : profile?.avatar_emoji ?? '🧳'
+            }
           </div>
 
           {profile?.display_name && (
@@ -246,19 +271,46 @@ export default function ProfilPage() {
             </div>
             <h2 className="mb-4 text-base font-bold" style={{ color: '#2C2416' }}>Modifier le profil</h2>
 
-            {/* Avatar picker */}
-            <div className="mb-4 flex flex-wrap gap-2">
-              {AVATAR_EMOJIS.map(emoji => (
-                <button key={emoji} type="button" onClick={() => setEditAvatarEmoji(emoji)}
-                  className="h-10 w-10 rounded-xl text-xl transition"
-                  style={{
-                    background: editAvatarEmoji === emoji ? '#F5E8DF' : '#F7F2EA',
-                    border: `1.5px solid ${editAvatarEmoji === emoji ? '#C2714A' : 'transparent'}`,
-                  }}
-                >
-                  {emoji}
-                </button>
-              ))}
+            {/* Avatar photo + emoji picker */}
+            <div className="mb-4 flex items-start gap-4">
+              {/* Photo circle */}
+              <button
+                type="button"
+                onClick={() => photoRef.current?.click()}
+                className="relative flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-full transition active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', border: '2.5px dashed #C2714A' }}
+              >
+                {editAvatarPreview ? (
+                  <img src={editAvatarPreview} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-2xl">{editAvatarEmoji}</span>
+                )}
+                {uploadingPhoto && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/30">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  </div>
+                )}
+                <div className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#C2714A] text-white text-xs">
+                  📷
+                </div>
+              </button>
+              <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarPhoto} />
+
+              {/* Emoji picker */}
+              <div className="flex flex-wrap gap-1.5 flex-1">
+                {AVATAR_EMOJIS.map(emoji => (
+                  <button key={emoji} type="button"
+                    onClick={() => { setEditAvatarEmoji(emoji); setEditAvatarPreview(null); setEditAvatarUrl(null) }}
+                    className="h-9 w-9 rounded-xl text-xl transition"
+                    style={{
+                      background: !editAvatarPreview && editAvatarEmoji === emoji ? '#F5E8DF' : '#F7F2EA',
+                      border: `1.5px solid ${!editAvatarPreview && editAvatarEmoji === emoji ? '#C2714A' : 'transparent'}`,
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex flex-col gap-3">

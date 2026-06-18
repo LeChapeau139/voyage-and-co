@@ -23,6 +23,7 @@ export interface Profile {
   username: string | null
   display_name: string | null
   avatar_emoji: string
+  avatar_url: string | null
   bio: string | null
   created_at: string
 }

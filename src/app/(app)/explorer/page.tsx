@@ -95,10 +95,13 @@ export default function ExplorerPage() {
                   style={{ background: '#FFFFFF', boxShadow: '0 2px 10px rgba(44,36,22,0.06)' }}
                 >
                   <div
-                    className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-2xl shadow-sm"
+                    className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl shadow-sm"
                     style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)' }}
                   >
-                    {profile.avatar_emoji || '🧳'}
+                    {profile.avatar_url
+                      ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                      : profile.avatar_emoji || '🧳'
+                    }
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-sm" style={{ color: '#2C2416' }}>
