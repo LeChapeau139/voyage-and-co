@@ -47,6 +47,7 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
   const [newFiles, setNewFiles] = useState<File[]>([])
   const [newPreviews, setNewPreviews] = useState<string[]>([])
   const [exifFilled, setExifFilled] = useState<'date' | 'location' | 'both' | null>(null)
+  const [exifEmpty, setExifEmpty] = useState(false)
   const [readingExif, setReadingExif] = useState(false)
 
   const [uploading, setUploading] = useState(false)
@@ -67,15 +68,21 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
     if (!isEdit && newFiles.length === 0 && toAdd.length > 0) {
       setReadingExif(true)
       try {
-        const exif = await exifr.parse(toAdd[0], {
-          pick: ['DateTimeOriginal', 'GPSLatitude', 'GPSLongitude'],
-        })
+        // Read date fields (multiple fallbacks)
+        const dateExif = await exifr.parse(toAdd[0], {
+          pick: ['DateTimeOriginal', 'DateTime', 'CreateDate', 'DateCreated'],
+          silentErrors: true,
+        }).catch(() => null)
+
+        // Read GPS via dedicated method (handles GPS IFD properly)
+        const gps = await exifr.gps(toAdd[0]).catch(() => null)
 
         let filledDate = false
         let filledLocation = false
 
-        if (exif?.DateTimeOriginal) {
-          const d = new Date(exif.DateTimeOriginal)
+        const rawDate = dateExif?.DateTimeOriginal ?? dateExif?.DateTime ?? dateExif?.CreateDate ?? dateExif?.DateCreated
+        if (rawDate) {
+          const d = rawDate instanceof Date ? rawDate : new Date(rawDate)
           if (!isNaN(d.getTime())) {
             setDate(d.toISOString().split('T')[0])
             setTime(d.toTimeString().slice(0, 5))
@@ -83,11 +90,10 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
           }
         }
 
-        if (exif?.GPSLatitude && exif?.GPSLongitude) {
+        if (gps?.latitude && gps?.longitude) {
           try {
             const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${exif.GPSLatitude}&lon=${exif.GPSLongitude}&format=json&accept-language=fr`,
-              { headers: { 'Accept-Language': 'fr' } }
+              `https://nominatim.openstreetmap.org/reverse?lat=${gps.latitude}&lon=${gps.longitude}&format=json&accept-language=fr`
             )
             const geo = await res.json()
             const addr = geo.address ?? {}
@@ -97,13 +103,14 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
               setLocationName([city, country].filter(Boolean).join(', '))
               filledLocation = true
             }
-          } catch { /* pas de réseau ou pas de résultat */ }
+          } catch { /* pas de réseau */ }
         }
 
         if (filledDate && filledLocation) setExifFilled('both')
         else if (filledDate) setExifFilled('date')
         else if (filledLocation) setExifFilled('location')
-      } catch { /* pas de données EXIF */ }
+        else setExifEmpty(true)
+      } catch { setExifEmpty(true) }
       setReadingExif(false)
     }
   }
@@ -246,6 +253,14 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
                 <button type="button" onClick={() => setExifFilled(null)} className="underline">
                   modifier
                 </button>
+              </p>
+            </div>
+          )}
+          {exifEmpty && !exifFilled && (
+            <div className="flex items-center gap-2 rounded-2xl px-3 py-2" style={{ background: '#F7F2EA' }}>
+              <span className="text-sm">📷</span>
+              <p className="text-xs" style={{ color: '#8A7B6A' }}>
+                Pas de métadonnées dans cette photo — remplis manuellement
               </p>
             </div>
           )}
