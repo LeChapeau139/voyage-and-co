@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useCreateAction } from '@/contexts/CreateActionContext'
 
-const tabs = [
+const leftTabs = [
   {
     href: '/voyages',
     label: 'Voyages',
@@ -22,6 +23,9 @@ const tabs = [
       </svg>
     ),
   },
+]
+
+const rightTabs = [
   {
     href: '/autour-de-moi',
     label: 'Autour',
@@ -43,29 +47,57 @@ const tabs = [
   },
 ]
 
-export default function BottomNav() {
+function Tab({ href, label, icon }: { href: string; label: string; icon: (active: boolean) => React.ReactNode }) {
   const pathname = usePathname()
+  const active = pathname.startsWith(href)
+  return (
+    <Link
+      href={href}
+      className={`flex flex-col items-center gap-0.5 rounded-full px-4 py-2.5 transition-all duration-200 ${
+        active ? 'bg-[#C2714A]' : 'hover:bg-[#F7F2EA]'
+      }`}
+    >
+      {icon(active)}
+      <span className={`text-[9px] font-semibold tracking-wide ${active ? 'text-white' : 'text-[#8A7B6A]'}`}>
+        {label}
+      </span>
+    </Link>
+  )
+}
+
+export default function BottomNav() {
+  const { action } = useCreateAction()
 
   return (
     <nav className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
       <div className="flex items-center gap-1 rounded-full bg-white/95 px-2 py-2 shadow-xl shadow-black/10 backdrop-blur-md ring-1 ring-black/5">
-        {tabs.map((tab) => {
-          const active = pathname.startsWith(tab.href)
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`flex flex-col items-center gap-0.5 rounded-full px-4 py-2.5 transition-all duration-200 ${
-                active ? 'bg-[#C2714A]' : 'hover:bg-[#F7F2EA]'
-              }`}
-            >
-              {tab.icon(active)}
-              <span className={`text-[9px] font-semibold tracking-wide ${active ? 'text-white' : 'text-[#8A7B6A]'}`}>
-                {tab.label}
-              </span>
-            </Link>
-          )
-        })}
+        {leftTabs.map((tab) => (
+          <Tab key={tab.href} {...tab} />
+        ))}
+
+        <button
+          onClick={() => action?.()}
+          disabled={!action}
+          className={`mx-1 flex h-11 w-11 items-center justify-center rounded-full transition-all duration-200 ${
+            action
+              ? 'bg-[#C2714A] shadow-md shadow-orange-900/25 active:scale-90'
+              : 'bg-[#EDE4D8] opacity-40'
+          }`}
+        >
+          <svg
+            className={`h-5 w-5 ${action ? 'text-white' : 'text-[#8A7B6A]'}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+
+        {rightTabs.map((tab) => (
+          <Tab key={tab.href} {...tab} />
+        ))}
       </div>
     </nav>
   )

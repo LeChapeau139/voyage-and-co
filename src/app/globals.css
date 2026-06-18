@@ -26,3 +26,16 @@ body {
 input[type="date"]::-webkit-calendar-picker-indicator {
   opacity: 0.5;
 }
+
+@keyframes toastSlideDown {
+  from { transform: translateX(-50%) translateY(-110%); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0);     opacity: 1; }
+}
+@keyframes toastSlideUp {
+  from { transform: translateX(-50%) translateY(0);     opacity: 1; }
+  to   { transform: translateX(-50%) translateY(-110%); opacity: 0; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}

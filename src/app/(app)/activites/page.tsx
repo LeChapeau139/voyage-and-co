@@ -1,137 +1,312 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Trip, Activity } from '@/lib/types'
-import CreateActivityModal from './CreateActivityModal'
+import type { Place, PlaceFolder, ActivityType } from '@/lib/types'
+import CreatePlaceModal from './CreatePlaceModal'
+import AddPlaceToTripSheet from './AddPlaceToTripSheet'
+import { useCreateAction } from '@/contexts/CreateActionContext'
+import PageFade from '@/components/PageFade'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+import { useToast } from '@/contexts/ToastContext'
 
-const TYPE_CONFIG = {
-  food:      { emoji: '🍽️', color: '#FEF3C7', dot: '#F59E0B' },
-  culture:   { emoji: '🏛️', color: '#E8F0E9', dot: '#6B8F71' },
-  transport: { emoji: '🚌', color: '#E8EFF7', dot: '#6B8AAF' },
-  hotel:     { emoji: '🏨', color: '#F3E8F5', dot: '#9B72A8' },
-  nature:    { emoji: '🌿', color: '#E8F0E9', dot: '#6B8F71' },
-  other:     { emoji: '📌', color: '#F7F2EA', dot: '#C2714A' },
+const FOLDER_EMOJIS = ['📁', '🗺️', '🍽️', '🏛️', '🌿', '🏨', '⭐', '❤️', '🔥', '🎭', '🏔️', '🌊']
+
+const TYPE_CONFIG: Record<ActivityType, { emoji: string; color: string }> = {
+  food:      { emoji: '🍽️', color: '#FEF3C7' },
+  culture:   { emoji: '🏛️', color: '#E8F0E9' },
+  transport: { emoji: '🚌', color: '#E8EFF7' },
+  hotel:     { emoji: '🏨', color: '#F3E8F5' },
+  nature:    { emoji: '🌿', color: '#E8F0E9' },
+  other:     { emoji: '📌', color: '#F7F2EA' },
 }
 
-export default function ActivitesPage() {
-  const [activeTrip, setActiveTrip] = useState<Trip | null>(null)
-  const [activities, setActivities] = useState<Activity[]>([])
+export default function BibliothequeePage() {
+  const [folders, setFolders] = useState<PlaceFolder[]>([])
+  const [places, setPlaces] = useState<Place[]>([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'favorites'>('all')
+  const [folderStack, setFolderStack] = useState<PlaceFolder[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null)
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderEmoji, setNewFolderEmoji] = useState('📁')
+  const [savingFolder, setSavingFolder] = useState(false)
 
-  const fetchData = async () => {
-    const { data: trip } = await supabase.from('trips').select('*').eq('is_active', true).single()
-    setActiveTrip(trip)
-    if (trip) {
-      const { data: acts } = await supabase.from('activities').select('*').eq('trip_id', trip.id).order('scheduled_at', { ascending: true })
-      setActivities(acts ?? [])
-    }
+  const { setAction } = useCreateAction()
+  const { toast } = useToast()
+
+  const currentFolder = folderStack.at(-1) ?? null
+  const currentFolderId = currentFolder?.id ?? null
+  const isAtRoot = folderStack.length === 0
+  const canCreateSubfolder = folderStack.length < 2
+
+  const visibleFolders = folders.filter(f => f.parent_id === currentFolderId)
+  const visiblePlaces = places.filter(p => p.folder_id === currentFolderId)
+  const filteredPlaces = filter === 'favorites' ? visiblePlaces.filter(p => p.is_favorite) : visiblePlaces
+
+  const fetchAll = useCallback(async () => {
+    const [fRes, pRes] = await Promise.all([
+      supabase.from('place_folders').select('*').order('created_at'),
+      supabase.from('places').select('*').order('created_at', { ascending: false }),
+    ])
+    setFolders(fRes.data ?? [])
+    setPlaces(pRes.data ?? [])
     setLoading(false)
+  }, [])
+
+  const { refreshing } = usePullToRefresh(fetchAll)
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  useEffect(() => {
+    setAction(() => setShowModal(true))
+    return () => setAction(null)
+  }, [setAction])
+
+  const toggleFavorite = async (place: Place) => {
+    await supabase.from('places').update({ is_favorite: !place.is_favorite }).eq('id', place.id)
+    setPlaces(prev => prev.map(p => p.id === place.id ? { ...p, is_favorite: !p.is_favorite } : p))
   }
 
-  useEffect(() => { fetchData() }, [])
+  const navigateInto = (folder: PlaceFolder) => {
+    setFolderStack(prev => [...prev, folder])
+    setFilter('all')
+    setCreatingFolder(false)
+  }
 
-  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-  const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const goBack = () => {
+    setFolderStack(prev => prev.slice(0, -1))
+    setFilter('all')
+    setCreatingFolder(false)
+  }
 
-  const grouped = activities.reduce<Record<string, Activity[]>>((acc, act) => {
-    const day = act.scheduled_at.split('T')[0]
-    if (!acc[day]) acc[day] = []
-    acc[day].push(act)
-    return acc
-  }, {})
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return
+    setSavingFolder(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('place_folders').insert({
+      user_id: user!.id,
+      name: newFolderName.trim(),
+      emoji: newFolderEmoji,
+      parent_id: currentFolderId,
+    }).select().single()
+    if (data) {
+      setFolders(prev => [...prev, data])
+      toast.success(`Dossier "${data.name}" créé`)
+    }
+    setNewFolderName('')
+    setNewFolderEmoji('📁')
+    setCreatingFolder(false)
+    setSavingFolder(false)
+  }
+
+  const folderItemCount = (folderId: string) =>
+    folders.filter(f => f.parent_id === folderId).length +
+    places.filter(p => p.folder_id === folderId).length
 
   return (
-    <div className="px-5 pt-14">
-      <div className="mb-2 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Planning</p>
-          <h1 className="text-2xl font-bold" style={{ color: '#2C2416' }}>Activités</h1>
-        </div>
-        {activeTrip && (
-          <button onClick={() => setShowModal(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-full text-white shadow-lg shadow-orange-900/20 transition active:scale-95"
-            style={{ background: '#C2714A' }}
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="mt-6 flex flex-col gap-3">
-          {[1, 2, 3].map(i => <div key={i} className="h-20 animate-pulse rounded-3xl" style={{ background: '#F0E8DC' }} />)}
-        </div>
-      ) : !activeTrip ? (
-        <div className="mt-24 flex flex-col items-center gap-3 text-center">
-          <div className="text-6xl mb-2">🗓️</div>
-          <p className="text-lg font-semibold" style={{ color: '#2C2416' }}>Aucun voyage actif</p>
-          <p className="text-sm" style={{ color: '#8A7B6A' }}>Active un voyage depuis l&apos;onglet Voyages</p>
-        </div>
-      ) : (
-        <>
-          <div className="mb-6 mt-1 flex items-center gap-2 rounded-2xl px-3 py-2.5" style={{ background: '#F7F2EA' }}>
-            <span className="text-sm">✈️</span>
-            <p className="text-sm font-medium" style={{ color: '#8A7B6A' }}>{activeTrip.name}</p>
+    <PageFade>
+      <div className="px-5 pt-14 pb-28">
+        {refreshing && (
+          <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#F5E8DF] border-t-[#C2714A]" />
           </div>
+        )}
 
-          {Object.keys(grouped).length === 0 ? (
-            <div className="mt-16 flex flex-col items-center gap-3 text-center">
-              <div className="text-5xl mb-2">🌴</div>
-              <p className="font-semibold" style={{ color: '#2C2416' }}>Aucune activité planifiée</p>
-              <p className="text-sm" style={{ color: '#8A7B6A' }}>Ajoute ta première activité</p>
-              <button onClick={() => setShowModal(true)}
-                className="mt-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-900/20"
-                style={{ background: '#C2714A' }}
-              >
-                Ajouter une activité
-              </button>
-            </div>
+        {/* Header */}
+        <div className="mb-5">
+          {!isAtRoot && (
+            <button onClick={goBack} className="mb-2 flex items-center gap-1 text-sm font-medium transition active:scale-95" style={{ color: '#C2714A' }}>
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+              {folderStack.length === 1 ? 'Bibliothèque' : folderStack.at(-2)?.name}
+            </button>
+          )}
+          {isAtRoot ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Mes lieux</p>
+              <h1 className="text-2xl font-bold" style={{ color: '#2C2416' }}>Bibliothèque</h1>
+            </>
           ) : (
-            <div className="flex flex-col gap-8">
-              {Object.entries(grouped).map(([day, acts]) => (
-                <div key={day}>
-                  <p className="mb-4 text-xs font-bold uppercase tracking-widest capitalize" style={{ color: '#B5A89A' }}>
-                    {formatDate(acts[0].scheduled_at)}
-                  </p>
-                  <div className="flex flex-col gap-3">
-                    {acts.map((act) => {
-                      const cfg = TYPE_CONFIG[act.activity_type] ?? TYPE_CONFIG.other
+            <h1 className="flex items-center gap-2 text-2xl font-bold" style={{ color: '#2C2416' }}>
+              <span>{currentFolder?.emoji}</span>
+              <span>{currentFolder?.name}</span>
+            </h1>
+          )}
+        </div>
+
+        {/* Filter tabs */}
+        <div className="mb-5 flex gap-2">
+          {[{ key: 'all', label: 'Tous' }, { key: 'favorites', label: '⭐ Favoris' }].map(tab => (
+            <button key={tab.key} onClick={() => setFilter(tab.key as 'all' | 'favorites')}
+              className="rounded-full px-4 py-1.5 text-sm font-semibold transition active:scale-95"
+              style={{ background: filter === tab.key ? '#C2714A' : '#F7F2EA', color: filter === tab.key ? '#FFFFFF' : '#8A7B6A' }}
+            >
+              {tab.label}
+            </button>
+          ))}
+          <span className="ml-auto self-center text-xs font-medium" style={{ color: '#B5A89A' }}>
+            {filteredPlaces.length} lieu{filteredPlaces.length !== 1 ? 'x' : ''}
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3].map(i => <div key={i} className="h-20 animate-pulse rounded-2xl" style={{ background: '#F0E8DC' }} />)}
+          </div>
+        ) : (
+          <>
+            {/* Folders section */}
+            {(visibleFolders.length > 0 || canCreateSubfolder) && (
+              <div className="mb-5">
+                {visibleFolders.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2.5 mb-2.5">
+                    {visibleFolders.map(folder => {
+                      const count = folderItemCount(folder.id)
                       return (
-                        <div key={act.id} className="flex items-start gap-3">
-                          <div className="flex flex-col items-center gap-1 pt-3">
-                            <span className="text-xs font-bold tabular-nums" style={{ color: '#B5A89A' }}>
-                              {formatTime(act.scheduled_at)}
-                            </span>
-                            <div className="h-2 w-2 rounded-full" style={{ background: cfg.dot }} />
+                        <button key={folder.id} onClick={() => navigateInto(folder)}
+                          className="flex items-center gap-3 rounded-2xl p-4 text-left transition active:scale-[0.97]"
+                          style={{ background: '#F5E8DF', border: '1.5px solid #EDD9C8', boxShadow: '0 2px 8px rgba(44,36,22,0.06)' }}
+                        >
+                          <span className="text-2xl">{folder.emoji}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm truncate" style={{ color: '#2C2416' }}>{folder.name}</p>
+                            <p className="text-xs mt-0.5" style={{ color: '#B5A89A' }}>
+                              {count > 0 ? `${count} élément${count > 1 ? 's' : ''}` : 'Vide'}
+                            </p>
                           </div>
-                          <div className="flex-1 rounded-2xl p-4 shadow-sm" style={{ background: cfg.color }}>
-                            <div className="flex items-start gap-3">
-                              <span className="text-xl">{cfg.emoji}</span>
-                              <div className="flex-1">
-                                <p className="font-semibold" style={{ color: '#2C2416' }}>{act.title}</p>
-                                {act.description && <p className="mt-0.5 text-sm" style={{ color: '#8A7B6A' }}>{act.description}</p>}
-                                {act.location_name && <p className="mt-1.5 text-xs font-medium" style={{ color: '#B5A89A' }}>📍 {act.location_name}</p>}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                          <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} style={{ color: '#C2714A' }}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
                       )
                     })}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+                )}
 
-      {showModal && activeTrip && (
-        <CreateActivityModal tripId={activeTrip.id} onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); fetchData() }} />
+                {/* Create folder / subfolder */}
+                {canCreateSubfolder && (
+                  creatingFolder ? (
+                    <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: '#FFFFFF', boxShadow: '0 2px 10px rgba(44,36,22,0.08)' }}>
+                      <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>
+                        {isAtRoot ? 'Nouveau dossier' : 'Nouveau sous-dossier'}
+                      </p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {FOLDER_EMOJIS.map(e => (
+                          <button key={e} type="button" onClick={() => setNewFolderEmoji(e)}
+                            className="h-9 w-9 rounded-xl text-xl transition"
+                            style={{ background: newFolderEmoji === e ? '#F5E8DF' : '#F7F2EA', border: `1.5px solid ${newFolderEmoji === e ? '#C2714A' : 'transparent'}` }}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                      <input autoFocus type="text"
+                        placeholder={isAtRoot ? 'Nom du dossier' : 'Nom du sous-dossier'}
+                        value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && createFolder()}
+                        className="w-full rounded-2xl border px-4 py-3 text-sm outline-none"
+                        style={{ borderColor: '#E8DFD0', color: '#2C2416', background: '#FAFAF7' }}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => { setCreatingFolder(false); setNewFolderName('') }}
+                          className="flex-1 rounded-2xl py-3 text-sm font-semibold transition active:scale-95"
+                          style={{ background: '#F7F2EA', color: '#8A7B6A' }}
+                        >
+                          Annuler
+                        </button>
+                        <button onClick={createFolder} disabled={!newFolderName.trim() || savingFolder}
+                          className="flex-1 rounded-2xl py-3 text-sm font-semibold text-white disabled:opacity-50 transition active:scale-95"
+                          style={{ background: '#C2714A' }}
+                        >
+                          {savingFolder ? '...' : 'Créer'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setCreatingFolder(true)}
+                      className="flex w-full items-center gap-3 rounded-2xl p-4 text-left transition active:scale-[0.97]"
+                      style={{ border: '1.5px dashed #D6CABC', color: '#B5A89A' }}
+                    >
+                      <span className="text-xl">📁</span>
+                      <span className="text-sm font-medium">
+                        {isAtRoot ? 'Nouveau dossier' : 'Nouveau sous-dossier'}
+                      </span>
+                    </button>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* Divider when both folders and places */}
+            {visibleFolders.length > 0 && visiblePlaces.length > 0 && (
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>
+                {isAtRoot ? 'Sans dossier' : 'Dans ce dossier'}
+              </p>
+            )}
+
+            {/* Places list */}
+            {filteredPlaces.length === 0 && visibleFolders.length === 0 ? (
+              <div className="mt-16 flex flex-col items-center gap-3 text-center">
+                <div className="text-5xl">{filter === 'favorites' ? '⭐' : currentFolder?.emoji ?? '📍'}</div>
+                <p className="font-semibold" style={{ color: '#2C2416' }}>
+                  {filter === 'favorites' ? 'Aucun favori' : currentFolder ? 'Dossier vide' : 'Bibliothèque vide'}
+                </p>
+                <p className="text-sm" style={{ color: '#8A7B6A' }}>
+                  {filter === 'favorites' ? 'Mets des lieux en favori' : 'Utilise le + pour ajouter un lieu'}
+                </p>
+              </div>
+            ) : filteredPlaces.length === 0 ? (
+              <div className="mt-8 flex flex-col items-center gap-3 text-center">
+                <p className="text-sm" style={{ color: '#8A7B6A' }}>
+                  {filter === 'favorites' ? 'Aucun favori dans ce dossier' : ''}
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {filteredPlaces.map(place => {
+                  const cfg = TYPE_CONFIG[place.activity_type] ?? TYPE_CONFIG.other
+                  return (
+                    <div key={place.id} className="flex items-center gap-3 rounded-2xl p-4 shadow-sm" style={{ background: cfg.color }}>
+                      <button onClick={() => setSelectedPlace(place)} className="flex flex-1 items-center gap-3 min-w-0 text-left transition active:scale-[0.98]">
+                        <span className="text-2xl flex-shrink-0">{cfg.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate" style={{ color: '#2C2416' }}>{place.title}</p>
+                          {place.location_name && <p className="text-xs mt-0.5 truncate" style={{ color: '#8A7B6A' }}>📍 {place.location_name}</p>}
+                          {place.description && <p className="text-xs mt-0.5 line-clamp-1" style={{ color: '#B5A89A' }}>{place.description}</p>}
+                        </div>
+                        <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} style={{ color: '#B5A89A' }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                      <button onClick={() => toggleFavorite(place)} className="flex-shrink-0 text-xl transition active:scale-90 pl-2">
+                        {place.is_favorite ? '⭐' : '☆'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {showModal && (
+        <CreatePlaceModal
+          defaultFolderId={currentFolderId}
+          onClose={() => setShowModal(false)}
+          onCreated={() => { setShowModal(false); fetchAll() }}
+        />
       )}
-    </div>
+      {selectedPlace && (
+        <AddPlaceToTripSheet
+          place={selectedPlace}
+          onClose={() => setSelectedPlace(null)}
+          onDone={() => setSelectedPlace(null)}
+        />
+      )}
+    </PageFade>
   )
 }

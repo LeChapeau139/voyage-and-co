@@ -1,114 +1,212 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import type { Trip } from '@/lib/types'
+import type { Trip, TravelStyle } from '@/lib/types'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
+
+const STYLE_CONFIG: Record<TravelStyle, { emoji: string; label: string }> = {
+  solo:    { emoji: '🧳', label: 'Solo' },
+  couple:  { emoji: '💑', label: 'Couple' },
+  friends: { emoji: '👥', label: 'Amis' },
+  family:  { emoji: '👨‍👩‍👧', label: 'Famille' },
+}
 import CreateTripModal from './CreateTripModal'
+import { useCreateAction } from '@/contexts/CreateActionContext'
+import { useToast } from '@/contexts/ToastContext'
+import PageFade from '@/components/PageFade'
+
+function TripCard({ trip, onActivate }: { trip: Trip; onActivate: (id: string) => void }) {
+  const [coverUrl, setCoverUrl] = useState<string | null>(trip.cover_url)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Poll until cover_url is generated (background job)
+  useEffect(() => {
+    setCoverUrl(trip.cover_url)
+    if (!trip.cover_url && trip.destination) {
+      pollingRef.current = setInterval(async () => {
+        const { data } = await supabase
+          .from('trips')
+          .select('cover_url')
+          .eq('id', trip.id)
+          .single()
+        if (data?.cover_url) {
+          setCoverUrl(data.cover_url)
+          clearInterval(pollingRef.current!)
+        }
+      }, 4000)
+    }
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
+  }, [trip.id, trip.cover_url, trip.destination])
+
+  return (
+    <Link
+      href={`/voyages/${trip.id}`}
+      className="relative block overflow-hidden rounded-xl transition active:scale-[0.94]"
+      style={{
+        aspectRatio: '3/4',
+        boxShadow: trip.is_active
+          ? '0 4px 16px rgba(194,113,74,0.45)'
+          : '0 2px 8px rgba(44,36,22,0.13)',
+      }}
+    >
+      {coverUrl ? (
+        <img
+          src={coverUrl}
+          alt={trip.name}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        /* Skeleton pendant la génération */
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5"
+          style={{ background: 'linear-gradient(135deg, #F5E8DF, #E8D5C0)' }}
+        >
+          <div className="text-xl">🎨</div>
+          <div className="h-1 w-8 animate-pulse rounded-full" style={{ background: '#C2714A', opacity: 0.4 }} />
+        </div>
+      )}
+
+      {/* Gradient overlay */}
+      <div
+        className="absolute inset-0"
+        style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.04) 0%, transparent 30%, rgba(15,8,0,0.72) 100%)' }}
+      />
+
+      {/* Active ring */}
+      {trip.is_active && (
+        <div className="absolute inset-0 rounded-xl ring-[2.5px] ring-[#C2714A]" />
+      )}
+
+      {/* Badge */}
+      <div className="absolute left-1.5 top-1.5">
+        {trip.is_active ? (
+          <span className="rounded-full bg-[#C2714A] px-1.5 py-0.5 text-[8px] font-bold text-white shadow">
+            ✈️
+          </span>
+        ) : (
+          <button
+            onClick={(e) => { e.preventDefault(); onActivate(trip.id) }}
+            className="rounded-full bg-black/35 px-1.5 py-0.5 text-[8px] font-semibold text-white backdrop-blur-sm transition active:scale-95"
+          >
+            Activer
+          </button>
+        )}
+      </div>
+
+      {/* Texte */}
+      <div className="absolute bottom-0 left-0 right-0 px-2 pb-2">
+        {trip.destination && (
+          <p className="truncate text-[8px] font-semibold uppercase tracking-wider text-white/55">
+            {trip.destination.split(',')[0]}
+          </p>
+        )}
+        <p className="truncate text-[10px] font-bold leading-tight text-white">
+          {trip.name}
+        </p>
+        {trip.travel_style && STYLE_CONFIG[trip.travel_style] && (
+          <p className="mt-0.5 text-[8px] text-white/50">
+            {STYLE_CONFIG[trip.travel_style].emoji} {STYLE_CONFIG[trip.travel_style].label}
+          </p>
+        )}
+      </div>
+    </Link>
+  )
+}
 
 export default function VoyagesPage() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const { setAction } = useCreateAction()
+  const { toast } = useToast()
 
-  const fetchTrips = async () => {
+  const fetchTrips = useCallback(async () => {
     const { data } = await supabase.from('trips').select('*').order('created_at', { ascending: false })
     setTrips(data ?? [])
     setLoading(false)
-  }
+  }, [])
 
-  useEffect(() => { fetchTrips() }, [])
+  const { refreshing } = usePullToRefresh(fetchTrips)
+
+  useEffect(() => { fetchTrips() }, [fetchTrips])
+
+  useEffect(() => {
+    setAction(() => setShowModal(true))
+    return () => setAction(null)
+  }, [setAction])
 
   const setActive = async (tripId: string) => {
     await supabase.from('trips').update({ is_active: false }).neq('id', tripId)
     await supabase.from('trips').update({ is_active: true }).eq('id', tripId)
+    toast.success('Voyage activé ✈️')
     fetchTrips()
   }
 
   return (
-    <div className="px-5 pt-14">
-      <div className="mb-7 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Mes aventures</p>
-          <h1 className="text-2xl font-bold" style={{ color: '#2C2416' }}>Voyages</h1>
+    <PageFade><div className="px-4 pt-14">
+      {refreshing && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#F5E8DF] border-t-[#C2714A]" />
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-white shadow-lg shadow-orange-900/20 transition active:scale-95"
-          style={{ background: '#C2714A' }}
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
+      )}
+
+      <div className="mb-5">
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#B5A89A' }}>Mes aventures</p>
+        <h1 className="text-2xl font-bold" style={{ color: '#2C2416' }}>Voyages</h1>
       </div>
 
       {loading ? (
-        <div className="flex flex-col gap-4">
-          {[1, 2].map(i => <div key={i} className="h-32 animate-pulse rounded-3xl" style={{ background: '#F0E8DC' }} />)}
+        <div className="grid grid-cols-2 gap-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="animate-pulse rounded-xl" style={{ aspectRatio: '3/4', background: '#F0E8DC' }} />
+          ))}
         </div>
       ) : trips.length === 0 ? (
-        <div className="mt-24 flex flex-col items-center gap-3 text-center">
-          <div className="text-6xl mb-2">🗺️</div>
-          <p className="text-lg font-semibold" style={{ color: '#2C2416' }}>Aucun voyage pour l&apos;instant</p>
-          <p className="text-sm" style={{ color: '#8A7B6A' }}>Commence par créer ton premier voyage</p>
-          <button onClick={() => setShowModal(true)}
-            className="mt-3 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-900/20"
-            style={{ background: '#C2714A' }}
+        <div className="mt-8 flex flex-col gap-4">
+          <p className="text-center text-sm font-medium" style={{ color: '#B5A89A' }}>Par où commencer ?</p>
+          {[
+            { step: '1', emoji: '✈️', title: 'Crée un voyage', desc: 'Donne un nom à ta prochaine aventure' },
+            { step: '2', emoji: '📸', title: 'Documente tes souvenirs', desc: 'Ajoute des photos et des notes au fil du voyage' },
+            { step: '3', emoji: '🌍', title: 'Explore autour de toi', desc: 'Trouve des lieux proches à ajouter à ton parcours' },
+          ].map(item => (
+            <div key={item.step}
+              className="flex items-center gap-4 rounded-2xl p-4"
+              style={{ background: '#FFFFFF', boxShadow: '0 2px 12px rgba(44,36,22,0.07)' }}
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
+                style={{ background: '#C2714A' }}
+              >{item.step}</div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm" style={{ color: '#2C2416' }}>
+                  {item.emoji} {item.title}
+                </p>
+                <p className="text-xs mt-0.5 leading-snug" style={{ color: '#8A7B6A' }}>{item.desc}</p>
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => setShowModal(true)}
+            className="mt-2 w-full rounded-2xl py-3.5 text-sm font-semibold text-white shadow-lg"
+            style={{ background: '#C2714A', boxShadow: '0 4px 16px rgba(194,113,74,0.35)' }}
           >
-            Créer un voyage
+            ✈️ Créer mon premier voyage
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
           {trips.map((trip) => (
-            <div key={trip.id}
-              className="overflow-hidden rounded-3xl"
-              style={{
-                background: trip.is_active ? 'linear-gradient(135deg, #C2714A 0%, #A85C38 100%)' : '#FFFFFF',
-                boxShadow: trip.is_active ? '0 8px 32px rgba(194,113,74,0.3)' : '0 2px 12px rgba(44,36,22,0.06)',
-              }}
-            >
-              <div className="p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  {trip.is_active ? (
-                    <span className="rounded-full bg-white/25 px-3 py-1 text-xs font-semibold text-white">
-                      ✈️ En cours
-                    </span>
-                  ) : (
-                    <button onClick={() => setActive(trip.id)}
-                      className="rounded-full border px-3 py-1 text-xs font-semibold transition active:scale-95"
-                      style={{ borderColor: '#E8DFD0', color: '#8A7B6A', background: '#F7F2EA' }}
-                    >
-                      Activer
-                    </button>
-                  )}
-                  {trip.start_date && (
-                    <span className={`text-xs font-medium ${trip.is_active ? 'text-white/70' : 'text-[#B5A89A]'}`}>
-                      {new Date(trip.start_date).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
-                    </span>
-                  )}
-                </div>
-                <h2 className={`text-xl font-bold ${trip.is_active ? 'text-white' : ''}`} style={{ color: trip.is_active ? undefined : '#2C2416' }}>
-                  {trip.name}
-                </h2>
-                {trip.destination && (
-                  <p className={`mt-0.5 text-sm ${trip.is_active ? 'text-white/75' : ''}`} style={{ color: trip.is_active ? undefined : '#8A7B6A' }}>
-                    📍 {trip.destination}
-                  </p>
-                )}
-                {trip.description && (
-                  <p className={`mt-2 text-sm line-clamp-2 ${trip.is_active ? 'text-white/60' : ''}`} style={{ color: trip.is_active ? undefined : '#B5A89A' }}>
-                    {trip.description}
-                  </p>
-                )}
-              </div>
-            </div>
+            <TripCard key={trip.id} trip={trip} onActivate={setActive} />
           ))}
         </div>
       )}
 
       {showModal && (
-        <CreateTripModal onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); fetchTrips() }} />
+        <CreateTripModal
+          onClose={() => setShowModal(false)}
+          onCreated={() => { setShowModal(false); fetchTrips() }}
+        />
       )}
-    </div>
+    </div></PageFade>
   )
 }
