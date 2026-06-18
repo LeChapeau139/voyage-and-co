@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import exifr from 'exifr'
 import { supabase } from '@/lib/supabase'
 import type { Activity, ActivityType } from '@/lib/types'
 import { useToast } from '@/contexts/ToastContext'
@@ -22,32 +23,89 @@ const TYPES: { value: ActivityType; emoji: string; label: string }[] = [
   { value: 'other',     emoji: '📍', label: 'Autre' },
 ]
 
+function todayStr() { return new Date().toISOString().split('T')[0] }
+function nowTimeStr() { return new Date().toTimeString().slice(0, 5) }
+
 export default function AddMemoryModal({ tripId, prefill, activity, onClose, onCreated }: Props) {
   const { toast } = useToast()
   const isEdit = !!activity
+
   const [title, setTitle] = useState(activity?.title ?? prefill?.title ?? '')
   const [type, setType] = useState<ActivityType>(activity?.activity_type ?? prefill?.activityType ?? 'other')
   const [note, setNote] = useState(activity?.description ?? '')
-  const [locationName] = useState(activity?.location_name ?? prefill?.locationName ?? '')
+  const [locationName, setLocationName] = useState(activity?.location_name ?? prefill?.locationName ?? '')
+  const [date, setDate] = useState(() => {
+    if (activity?.scheduled_at) return activity.scheduled_at.split('T')[0]
+    return todayStr()
+  })
+  const [time, setTime] = useState(() => {
+    if (activity?.scheduled_at) return activity.scheduled_at.slice(11, 16)
+    return nowTimeStr()
+  })
 
-  // Existing photos (edit mode) — can be removed individually
   const [existingPhotos, setExistingPhotos] = useState<string[]>(activity?.photos ?? [])
-  // New files to upload
   const [newFiles, setNewFiles] = useState<File[]>([])
   const [newPreviews, setNewPreviews] = useState<string[]>([])
+  const [exifFilled, setExifFilled] = useState<'date' | 'location' | 'both' | null>(null)
+  const [readingExif, setReadingExif] = useState(false)
 
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
     if (!files.length) return
+
     const remaining = 6 - existingPhotos.length - newFiles.length
     const toAdd = files.slice(0, remaining)
     setNewFiles(prev => [...prev, ...toAdd])
     setNewPreviews(prev => [...prev, ...toAdd.map(f => URL.createObjectURL(f))])
     e.target.value = ''
+
+    // Auto-fill from first photo only, in create mode
+    if (!isEdit && newFiles.length === 0 && toAdd.length > 0) {
+      setReadingExif(true)
+      try {
+        const exif = await exifr.parse(toAdd[0], {
+          pick: ['DateTimeOriginal', 'GPSLatitude', 'GPSLongitude'],
+        })
+
+        let filledDate = false
+        let filledLocation = false
+
+        if (exif?.DateTimeOriginal) {
+          const d = new Date(exif.DateTimeOriginal)
+          if (!isNaN(d.getTime())) {
+            setDate(d.toISOString().split('T')[0])
+            setTime(d.toTimeString().slice(0, 5))
+            filledDate = true
+          }
+        }
+
+        if (exif?.GPSLatitude && exif?.GPSLongitude) {
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${exif.GPSLatitude}&lon=${exif.GPSLongitude}&format=json&accept-language=fr`,
+              { headers: { 'Accept-Language': 'fr' } }
+            )
+            const geo = await res.json()
+            const addr = geo.address ?? {}
+            const city = addr.city || addr.town || addr.village || addr.municipality || addr.county
+            const country = addr.country
+            if (city || country) {
+              setLocationName([city, country].filter(Boolean).join(', '))
+              filledLocation = true
+            }
+          } catch { /* pas de réseau ou pas de résultat */ }
+        }
+
+        if (filledDate && filledLocation) setExifFilled('both')
+        else if (filledDate) setExifFilled('date')
+        else if (filledLocation) setExifFilled('location')
+      } catch { /* pas de données EXIF */ }
+      setReadingExif(false)
+    }
   }
 
   const removeExisting = (idx: number) =>
@@ -59,8 +117,6 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
     setNewPreviews(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const totalPhotos = existingPhotos.length + newFiles.length
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
@@ -70,7 +126,6 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setError('Non connecté'); setUploading(false); return }
 
-    // Upload new photos
     const uploadedUrls: string[] = []
     for (const file of newFiles) {
       const fd = new FormData()
@@ -82,12 +137,15 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
     }
 
     const allPhotos = [...existingPhotos, ...uploadedUrls]
+    const scheduledAt = date ? `${date}T${time || '12:00'}:00` : new Date().toISOString()
 
     if (isEdit && activity) {
       const { error: updateError } = await supabase.from('activities').update({
         title: title.trim(),
         activity_type: type,
         description: note.trim() || null,
+        location_name: locationName.trim() || null,
+        scheduled_at: scheduledAt,
         photos: allPhotos,
       }).eq('id', activity.id)
       if (updateError) { setError(updateError.message); setUploading(false); return }
@@ -99,9 +157,9 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         title: title.trim(),
         activity_type: type,
         entry_type: 'memory',
-        scheduled_at: new Date().toISOString(),
+        scheduled_at: scheduledAt,
         description: note.trim() || null,
-        location_name: locationName || null,
+        location_name: locationName.trim() || null,
         photos: allPhotos,
       })
       if (insertError) { setError(insertError.message); setUploading(false); return }
@@ -111,7 +169,10 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
     onCreated()
   }
 
+  const totalPhotos = existingPhotos.length + newFiles.length
   const canAddMore = totalPhotos < 6
+  const inputClass = "w-full rounded-2xl border px-4 py-3.5 text-sm outline-none placeholder:text-[#B5A89A]"
+  const inputStyle = { borderColor: '#E8DFD0', color: '#2C2416', background: '#FAFAF7' }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 backdrop-blur-sm">
@@ -135,7 +196,6 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
 
           {/* Photo strip */}
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {/* Existing photos */}
             {existingPhotos.map((url, i) => (
               <div key={`ex-${i}`} className="relative flex-shrink-0">
                 <img src={url} alt="" className="h-20 w-20 rounded-2xl object-cover" />
@@ -145,7 +205,6 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
                 >×</button>
               </div>
             ))}
-            {/* New photos */}
             {newPreviews.map((url, i) => (
               <div key={`new-${i}`} className="relative flex-shrink-0">
                 <img src={url} alt="" className="h-20 w-20 rounded-2xl object-cover" />
@@ -155,23 +214,41 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
                 >×</button>
               </div>
             ))}
-            {/* Add button */}
             {canAddMore && (
               <button type="button" onClick={() => fileRef.current?.click()}
                 className="flex h-20 w-20 flex-shrink-0 flex-col items-center justify-center gap-1 rounded-2xl transition active:scale-95"
-                style={{
-                  background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)',
-                  border: '2px dashed #D4B89A',
-                }}
+                style={{ background: 'linear-gradient(135deg, #F5E8DF, #EDD9C8)', border: '2px dashed #D4B89A' }}
               >
-                <span className="text-xl">📷</span>
-                <span className="text-[9px] font-semibold" style={{ color: '#C2714A' }}>
-                  {totalPhotos === 0 ? 'Photo' : '+'}
-                </span>
+                {readingExif ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#D4B89A] border-t-[#C2714A]" />
+                ) : (
+                  <>
+                    <span className="text-xl">📷</span>
+                    <span className="text-[9px] font-semibold" style={{ color: '#C2714A' }}>
+                      {totalPhotos === 0 ? 'Photo' : '+'}
+                    </span>
+                  </>
+                )}
               </button>
             )}
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} />
+
+          {/* EXIF badge */}
+          {exifFilled && (
+            <div className="flex items-center gap-2 rounded-2xl px-3 py-2" style={{ background: '#F0F7F0' }}>
+              <span className="text-sm">✨</span>
+              <p className="text-xs font-medium" style={{ color: '#5A8A6A' }}>
+                {exifFilled === 'both' && 'Date et lieu détectés depuis ta photo'}
+                {exifFilled === 'date' && 'Date détectée depuis ta photo'}
+                {exifFilled === 'location' && 'Lieu détecté depuis ta photo'}
+                {' — '}
+                <button type="button" onClick={() => setExifFilled(null)} className="underline">
+                  modifier
+                </button>
+              </p>
+            </div>
+          )}
 
           {/* Type */}
           <div className="grid grid-cols-6 gap-1.5">
@@ -194,16 +271,37 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
           <input
             type="text" placeholder="Qu'as-tu fait ? *" value={title}
             onChange={e => setTitle(e.target.value)} required
-            className="w-full rounded-2xl border px-4 py-3.5 text-sm outline-none placeholder:text-[#B5A89A]"
-            style={{ borderColor: '#E8DFD0', color: '#2C2416', background: '#FAFAF7' }}
+            className={inputClass} style={inputStyle}
           />
+
+          {/* Location */}
+          <input
+            type="text" placeholder="📍 Lieu (optionnel)" value={locationName}
+            onChange={e => setLocationName(e.target.value)}
+            className={inputClass} style={inputStyle}
+          />
+
+          {/* Date + Time */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: '#B5A89A' }}>Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                className={inputClass} style={inputStyle}
+              />
+            </div>
+            <div className="w-28 flex-shrink-0">
+              <label className="mb-1.5 block text-xs font-medium" style={{ color: '#B5A89A' }}>Heure</label>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)}
+                className={inputClass} style={inputStyle}
+              />
+            </div>
+          </div>
 
           {/* Note */}
           <textarea
             placeholder="Une note, une anecdote... (optionnel)"
             value={note} onChange={e => setNote(e.target.value)} rows={2}
-            className="w-full resize-none rounded-2xl border px-4 py-3.5 text-sm outline-none placeholder:text-[#B5A89A]"
-            style={{ borderColor: '#E8DFD0', color: '#2C2416', background: '#FAFAF7' }}
+            className={`${inputClass} resize-none`} style={inputStyle}
           />
 
           {error && <p className="text-sm" style={{ color: '#DC5E4A' }}>{error}</p>}
