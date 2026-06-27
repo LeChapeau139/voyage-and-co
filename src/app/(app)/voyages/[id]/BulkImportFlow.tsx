@@ -6,18 +6,17 @@ import { supabase } from '@/lib/supabase'
 import { useToast } from '@/contexts/ToastContext'
 import type { ActivityType } from '@/lib/types'
 
-interface DraftPhoto {
+interface ImportedPhoto {
+  id: string
   file: File
   preview: string
-  title: string
-  type: ActivityType
   date: string
   time: string
   locationName: string
   locationPending: boolean
+  type: ActivityType
   typePending: boolean
-  isExpandable: boolean
-  skipped: boolean
+  assigned: boolean
 }
 
 interface Props {
@@ -39,24 +38,16 @@ const TYPES: { value: ActivityType; emoji: string; label: string }[] = [
 const COUNTRY_CURRENCY: Record<string, string> = {
   'japon': 'JPY', 'japan': 'JPY',
   'états-unis': 'USD', 'united states': 'USD', 'usa': 'USD',
-  'royaume-uni': 'GBP', 'united kingdom': 'GBP', 'angleterre': 'GBP',
+  'royaume-uni': 'GBP', 'united kingdom': 'GBP',
   'suisse': 'CHF', 'switzerland': 'CHF',
   'thaïlande': 'THB', 'thailand': 'THB',
-  'maroc': 'MAD', 'morocco': 'MAD',
-  'turquie': 'TRY', 'turkey': 'TRY',
-  'mexique': 'MXN', 'mexico': 'MXN',
-  'australie': 'AUD', 'australia': 'AUD',
-  'canada': 'CAD',
-  'chine': 'CNY', 'china': 'CNY',
-  'corée': 'KRW', 'korea': 'KRW',
-  'inde': 'INR', 'india': 'INR',
+  'maroc': 'MAD', 'turquie': 'TRY',
+  'mexique': 'MXN', 'australie': 'AUD', 'australia': 'AUD',
+  'canada': 'CAD', 'chine': 'CNY', 'china': 'CNY',
+  'corée': 'KRW', 'inde': 'INR', 'india': 'INR',
   'brésil': 'BRL', 'brazil': 'BRL',
-  'indonésie': 'IDR', 'indonesia': 'IDR',
-  'vietnam': 'VND',
+  'indonésie': 'IDR', 'vietnam': 'VND',
   'singapour': 'SGD', 'singapore': 'SGD',
-  'norvège': 'NOK', 'suède': 'SEK', 'danemark': 'DKK',
-  'pologne': 'PLN',
-  'égypte': 'EGP', 'egypt': 'EGP',
 }
 
 function detectCurrencyCode(locationName: string, tripDestination?: string | null): string {
@@ -74,12 +65,16 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
   const titleRef = useRef<HTMLInputElement>(null)
   const previewsRef = useRef<string[]>([])
 
-  const [phase, setPhase] = useState<'select' | 'fill' | 'saving'>('select')
-  const [drafts, setDrafts] = useState<DraftPhoto[]>([])
-  const [current, setCurrent] = useState(0)
+  const [phase, setPhase] = useState<'select' | 'organize' | 'saving'>('select')
+  const [photos, setPhotos] = useState<ImportedPhoto[]>([])
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [memoriesCreated, setMemoriesCreated] = useState(0)
+
+  // Current memory form
+  const [title, setTitle] = useState('')
+  const [memType, setMemType] = useState<ActivityType>('other')
   const [shakingTitle, setShakingTitle] = useState(false)
-  const [savedCount, setSavedCount] = useState(0)
-  const [totalToSave, setTotalToSave] = useState(0)
+  const [savingMemory, setSavingMemory] = useState(false)
 
   useEffect(() => {
     fileRef.current?.click()
@@ -89,9 +84,10 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
     return () => { previewsRef.current.forEach(url => URL.revokeObjectURL(url)) }
   }, [])
 
+  // Focus title when photos are selected
   useEffect(() => {
-    if (phase === 'fill') setTimeout(() => titleRef.current?.focus(), 150)
-  }, [phase, current])
+    if (selected.size > 0) setTimeout(() => titleRef.current?.focus(), 100)
+  }, [selected.size > 0])
 
   const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -99,7 +95,7 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
 
     const gpsMap: Record<number, { latitude: number; longitude: number } | null> = {}
 
-    const initial: DraftPhoto[] = await Promise.all(
+    const initial: ImportedPhoto[] = await Promise.all(
       files.map(async (file, i) => {
         let date = todayStr()
         let time = nowTimeStr()
@@ -122,46 +118,44 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
         } catch { gpsMap[i] = null }
 
         return {
+          id: `${i}-${file.name}-${file.size}`,
           file,
           preview: URL.createObjectURL(file),
-          title: '',
-          type: 'other' as ActivityType,
           date,
           time,
           locationName: '',
           locationPending: !!gpsMap[i],
+          type: 'other' as ActivityType,
           typePending: true,
-          isExpandable: false,
-          skipped: false,
+          assigned: false,
         }
       })
     )
 
     previewsRef.current = initial.map(d => d.preview)
-    setDrafts(initial)
-    setPhase('fill')
-    setCurrent(0)
+    setPhotos(initial)
+    setPhase('organize')
 
-    // Background: Gemini classify (parallel)
+    // Background: Gemini classify
     files.forEach((file, i) => {
       const fd = new FormData()
       fd.append('file', file)
       fetch('/api/classify-activity', { method: 'POST', body: fd })
         .then(r => r.json())
-        .then(data => setDrafts(prev => prev.map((d, idx) =>
-          idx === i ? { ...d, type: data.type ?? 'other', typePending: false } : d
+        .then(data => setPhotos(prev => prev.map((p, idx) =>
+          idx === i ? { ...p, type: data.type ?? 'other', typePending: false } : p
         )))
-        .catch(() => setDrafts(prev => prev.map((d, idx) =>
-          idx === i ? { ...d, typePending: false } : d
+        .catch(() => setPhotos(prev => prev.map((p, idx) =>
+          idx === i ? { ...p, typePending: false } : p
         )))
     })
 
-    // Background: geocode (sequential, Nominatim 1 req/s)
+    // Background: geocode GPS (sequential, Nominatim 1 req/s)
     ;(async () => {
       for (let i = 0; i < files.length; i++) {
         const gps = gpsMap[i]
         if (!gps) {
-          setDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, locationPending: false } : d))
+          setPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, locationPending: false } : p))
           continue
         }
         try {
@@ -178,20 +172,43 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
           const country = addr.country
           const locationName = [place || road, neighbourhood !== city ? neighbourhood : null, city, country]
             .filter((v): v is string => Boolean(v))
-            .filter((v, i, a) => a.indexOf(v) === i)
+            .filter((v, j, a) => a.indexOf(v) === j)
             .join(', ')
-          setDrafts(prev => prev.map((d, idx) =>
-            idx === i ? { ...d, locationName, locationPending: false } : d
+          setPhotos(prev => prev.map((p, idx) =>
+            idx === i ? { ...p, locationName, locationPending: false } : p
           ))
         } catch {
-          setDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, locationPending: false } : d))
+          setPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, locationPending: false } : p))
         }
       }
     })()
   }
 
-  const updateCurrent = (update: Partial<DraftPhoto>) => {
-    setDrafts(prev => prev.map((d, i) => i === current ? { ...d, ...update } : d))
+  const toggleSelect = (id: string) => {
+    if (phase !== 'organize') return
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // When selection changes, auto-fill type from first selected photo
+  const updateFormFromSelection = (newSelected: Set<string>) => {
+    const firstId = [...newSelected][0]
+    if (!firstId) return
+    const photo = photos.find(p => p.id === firstId)
+    if (photo && !photo.typePending) setMemType(photo.type)
+  }
+
+  const handleToggle = (id: string) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelected(next)
+    if (next.size > 0) updateFormFromSelection(next)
+    if (next.size === 0) setTitle('')
   }
 
   const shakeTitle = () => {
@@ -200,73 +217,66 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
     titleRef.current?.focus()
   }
 
-  const triggerSave = async (skipCurrentIndex?: number) => {
-    const toSave = drafts.filter((d, i) => {
-      if (i === skipCurrentIndex) return false
-      return !d.skipped && d.title.trim()
-    })
+  const createMemory = async () => {
+    if (!title.trim()) { shakeTitle(); return }
+    const selectedPhotos = photos.filter(p => selected.has(p.id))
+    if (!selectedPhotos.length) return
 
-    if (!toSave.length) { onClose(); return }
-
-    setPhase('saving')
-    setTotalToSave(toSave.length)
-    setSavedCount(0)
+    setSavingMemory(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { onClose(); return }
+    if (!user) { setSavingMemory(false); return }
 
-    let count = 0
-    for (const draft of toSave) {
-      let photoUrl = ''
+    // Upload all selected photos via API route
+    const uploadedUrls: string[] = []
+    for (const photo of selectedPhotos) {
       try {
-        const ext = draft.file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-        const path = `activity-photos/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-        const { data, error } = await supabase.storage.from('activity-photos').upload(path, draft.file)
-        if (!error && data) {
-          const { data: { publicUrl } } = supabase.storage.from('activity-photos').getPublicUrl(data.path)
-          photoUrl = publicUrl
-        }
+        const fd = new FormData()
+        fd.append('file', photo.file)
+        const res = await fetch('/api/upload-activity-photo', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (data.url) uploadedUrls.push(data.url)
       } catch {}
-
-      await supabase.from('activities').insert({
-        trip_id: tripId,
-        user_id: user.id,
-        title: draft.title.trim(),
-        activity_type: draft.type,
-        entry_type: 'memory',
-        scheduled_at: `${draft.date}T${draft.time}:00`,
-        location_name: draft.locationName || null,
-        photos: photoUrl ? [photoUrl] : [],
-        cost_currency: detectCurrencyCode(draft.locationName, tripDestination),
-        is_expandable: draft.isExpandable,
-        photo_details: [],
-      })
-
-      count++
-      setSavedCount(count)
     }
 
-    toast.success(`${count} souvenir${count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''} ! 📸`)
-    onDone()
+    // Use first photo's EXIF for date/location
+    const first = selectedPhotos[0]
+    const locationName = selectedPhotos.find(p => p.locationName)?.locationName ?? ''
+
+    await supabase.from('activities').insert({
+      trip_id: tripId,
+      user_id: user.id,
+      title: title.trim(),
+      activity_type: memType,
+      entry_type: 'memory',
+      scheduled_at: `${first.date}T${first.time}:00`,
+      location_name: locationName || null,
+      photos: uploadedUrls,
+      cost_currency: detectCurrencyCode(locationName, tripDestination),
+      is_expandable: false,
+      photo_details: [],
+    })
+
+    // Mark photos as assigned
+    const assignedIds = new Set(selected)
+    setPhotos(prev => prev.map(p => assignedIds.has(p.id) ? { ...p, assigned: true } : p))
+    setSelected(new Set())
+    setTitle('')
+    setMemType('other')
+    setMemoriesCreated(c => c + 1)
+    setSavingMemory(false)
   }
 
-  const handleNext = () => {
-    const draft = drafts[current]
-    if (!draft.title.trim()) { shakeTitle(); return }
-    if (current >= drafts.length - 1) triggerSave()
-    else setCurrent(c => c + 1)
-  }
-
-  const handleSkip = () => {
-    if (current >= drafts.length - 1) {
-      triggerSave(current)
+  const finish = () => {
+    if (memoriesCreated > 0) {
+      toast.success(`${memoriesCreated} souvenir${memoriesCreated > 1 ? 's' : ''} créé${memoriesCreated > 1 ? 's' : ''} ! 📸`)
+      onDone()
     } else {
-      updateCurrent({ skipped: true })
-      setCurrent(c => c + 1)
+      onClose()
     }
   }
 
-  // ─── Select phase: just the hidden input ───
+  // ─── Select phase ───
   if (phase === 'select') {
     return (
       <input
@@ -280,146 +290,174 @@ export default function BulkImportFlow({ tripId, tripDestination, onClose, onDon
     )
   }
 
-  // ─── Saving phase ───
-  if (phase === 'saving') {
-    return (
-      <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center" style={{ background: '#FAF8F5' }}>
-        <div className="mb-4 text-5xl">📸</div>
-        <p className="mb-1 text-base font-semibold" style={{ color: '#2C2416' }}>Création en cours…</p>
-        <p className="text-sm" style={{ color: '#8A7B6A' }}>{savedCount} / {totalToSave} souvenirs</p>
-        <div className="mt-6 h-1.5 w-48 overflow-hidden rounded-full" style={{ background: '#E8DFD0' }}>
-          <div
-            className="h-full rounded-full transition-all duration-300"
-            style={{
-              width: totalToSave > 0 ? `${(savedCount / totalToSave) * 100}%` : '0%',
-              background: '#C2714A',
-            }}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  // ─── Fill phase ───
-  const draft = drafts[current]
-  if (!draft) return null
-  const isLast = current >= drafts.length - 1
+  const unassigned = photos.filter(p => !p.assigned)
+  const selectedList = photos.filter(p => selected.has(p.id))
+  const firstSelected = selectedList[0]
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-black">
-      {/* Header overlay */}
-      <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-4 pt-14 pb-3">
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: '#FAF8F5' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pb-3 pt-14">
         <button
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
-        >✕</button>
-
-        <span
-          className="rounded-full px-3 py-1 text-xs font-bold text-white"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
+          onClick={finish}
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold"
+          style={{ background: '#F0E8DC', color: '#8A7B6A' }}
         >
-          {current + 1} / {drafts.length}
-        </span>
+          ← Terminer
+        </button>
 
-        <button
-          onClick={handleSkip}
-          className="rounded-full px-3 py-1.5 text-xs font-semibold"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', color: 'rgba(255,255,255,0.8)' }}
-        >Ignorer</button>
-      </div>
-
-      {/* Photo */}
-      <div className="flex-1 overflow-hidden">
-        <img src={draft.preview} alt="" className="h-full w-full object-cover" />
-      </div>
-
-      {/* Bottom panel */}
-      <div className="rounded-t-[2rem] bg-white px-5 pb-10 pt-5 shadow-2xl">
-        {/* Type selector */}
-        <div className="mb-3 flex items-center gap-2">
-          {TYPES.map(t => (
-            <button
-              key={t.value}
-              type="button"
-              onClick={() => updateCurrent({ type: t.value })}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-lg transition active:scale-90"
-              style={{
-                background: draft.type === t.value ? '#C2714A' : '#F5EDE4',
-                opacity: draft.typePending && draft.type !== t.value ? 0.55 : 1,
-              }}
-              title={t.label}
-            >{t.emoji}</button>
-          ))}
-          {draft.typePending && (
-            <span className="text-[10px]" style={{ color: '#B5A89A' }}>détection…</span>
+        <div className="text-center">
+          <p className="text-sm font-bold" style={{ color: '#2C2416' }}>
+            {unassigned.length} photo{unassigned.length !== 1 ? 's' : ''} restante{unassigned.length !== 1 ? 's' : ''}
+          </p>
+          {memoriesCreated > 0 && (
+            <p className="text-[10px]" style={{ color: '#8A7B6A' }}>
+              {memoriesCreated} souvenir{memoriesCreated > 1 ? 's' : ''} créé{memoriesCreated > 1 ? 's' : ''}
+            </p>
           )}
         </div>
 
-        {/* Title input */}
-        <input
-          ref={titleRef}
-          type="text"
-          placeholder="Titre du souvenir *"
-          value={draft.title}
-          onChange={e => updateCurrent({ title: e.target.value })}
-          onKeyDown={e => e.key === 'Enter' && handleNext()}
-          className={`w-full rounded-2xl border px-4 py-3.5 text-sm outline-none placeholder:text-[#B5A89A] ${shakingTitle ? 'animate-[shake_0.45s_ease]' : ''}`}
-          style={{
-            borderColor: shakingTitle ? '#C2714A' : '#E8DFD0',
-            color: '#2C2416',
-            background: '#FAFAF7',
-          }}
-        />
+        <div className="w-16" />
+      </div>
 
-        {/* Date + location badges */}
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          <span className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: '#F5EDE4', color: '#8A7B6A' }}>
-            📅 {new Date(draft.date + 'T12:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </span>
-          {draft.locationPending ? (
-            <span className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: '#F5EDE4', color: '#B5A89A' }}>
-              🔍 Lieu en cours…
-            </span>
-          ) : draft.locationName ? (
-            <span className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: '#F5EDE4', color: '#8A7B6A' }}>
-              📍 {draft.locationName}
-            </span>
-          ) : null}
-        </div>
+      {/* Instruction */}
+      {selected.size === 0 && (
+        <p className="px-5 pb-2 text-xs" style={{ color: '#B5A89A' }}>
+          Sélectionne les photos d'un même souvenir
+        </p>
+      )}
 
-        {/* Toggle page détaillée */}
+      {/* Photo grid */}
+      <div className="flex-1 overflow-y-auto px-4">
+        {unassigned.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="text-5xl">🎉</div>
+            <p className="text-base font-bold" style={{ color: '#2C2416' }}>Toutes les photos sont assignées !</p>
+            <p className="text-sm" style={{ color: '#8A7B6A' }}>{memoriesCreated} souvenir{memoriesCreated > 1 ? 's' : ''} créé{memoriesCreated > 1 ? 's' : ''}</p>
+            <button
+              onClick={finish}
+              className="mt-4 rounded-2xl px-6 py-3 text-sm font-bold text-white"
+              style={{ background: '#C2714A' }}
+            >
+              Voir le voyage ✓
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5 pb-56">
+            {unassigned.map(photo => {
+              const isSel = selected.has(photo.id)
+              const selIdx = selectedList.findIndex(p => p.id === photo.id)
+              return (
+                <button
+                  key={photo.id}
+                  onClick={() => handleToggle(photo.id)}
+                  className="relative aspect-square overflow-hidden rounded-xl transition active:scale-95"
+                  style={{ border: isSel ? '2.5px solid #C2714A' : '2.5px solid transparent' }}
+                >
+                  <img src={photo.preview} alt="" className="h-full w-full object-cover" />
+                  {/* Pending indicators */}
+                  {(photo.locationPending || photo.typePending) && !isSel && (
+                    <div className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-white/60" />
+                  )}
+                  {/* Selection badge */}
+                  {isSel && (
+                    <div
+                      className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                      style={{ background: '#C2714A' }}
+                    >
+                      {selIdx + 1}
+                    </div>
+                  )}
+                  {/* Overlay when selected */}
+                  {isSel && (
+                    <div className="absolute inset-0 rounded-xl" style={{ background: 'rgba(194,113,74,0.15)' }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom form — slides up when photos are selected */}
+      {selected.size > 0 && (
         <div
-          className="mt-3 flex items-center justify-between rounded-2xl px-4 py-2.5"
-          style={{
-            background: draft.isExpandable ? '#FEF6F2' : '#FAFAF7',
-            border: `1.5px solid ${draft.isExpandable ? '#C2714A' : '#E8DFD0'}`,
-          }}
+          className="absolute bottom-0 left-0 right-0 rounded-t-[2rem] bg-white px-5 pb-10 pt-5 shadow-2xl"
+          style={{ animation: 'slideUp 0.25s ease-out' }}
         >
-          <p className="text-xs font-semibold" style={{ color: '#2C2416' }}>Page détaillée 📖</p>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-semibold" style={{ color: '#2C2416' }}>
+              {selected.size} photo{selected.size > 1 ? 's' : ''} sélectionnée{selected.size > 1 ? 's' : ''}
+            </p>
+            <button
+              onClick={() => { setSelected(new Set()); setTitle('') }}
+              className="text-xs"
+              style={{ color: '#B5A89A' }}
+            >
+              Désélectionner
+            </button>
+          </div>
+
+          {/* Type selector */}
+          <div className="mb-3 flex items-center gap-2">
+            {TYPES.map(t => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setMemType(t.value)}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-lg transition active:scale-90"
+                style={{ background: memType === t.value ? '#C2714A' : '#F5EDE4' }}
+                title={t.label}
+              >{t.emoji}</button>
+            ))}
+          </div>
+
+          {/* Title input */}
+          <input
+            ref={titleRef}
+            type="text"
+            placeholder="Titre du souvenir *"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && createMemory()}
+            className={`w-full rounded-2xl border px-4 py-3.5 text-sm outline-none placeholder:text-[#B5A89A] ${shakingTitle ? 'animate-[shake_0.45s_ease]' : ''}`}
+            style={{
+              borderColor: shakingTitle ? '#C2714A' : '#E8DFD0',
+              color: '#2C2416',
+              background: '#FAFAF7',
+            }}
+          />
+
+          {/* Date + location from first selected photo */}
+          {firstSelected && (
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <span className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: '#F5EDE4', color: '#8A7B6A' }}>
+                📅 {new Date(firstSelected.date + 'T12:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+              </span>
+              {firstSelected.locationPending ? (
+                <span className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: '#F5EDE4', color: '#B5A89A' }}>
+                  🔍 Lieu en cours…
+                </span>
+              ) : firstSelected.locationName ? (
+                <span className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: '#F5EDE4', color: '#8A7B6A' }}>
+                  📍 {firstSelected.locationName}
+                </span>
+              ) : null}
+            </div>
+          )}
+
+          {/* Create button */}
           <button
             type="button"
-            onClick={() => updateCurrent({ isExpandable: !draft.isExpandable })}
-            className="relative h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200"
-            style={{ background: draft.isExpandable ? '#C2714A' : '#D4C9B8' }}
+            onClick={createMemory}
+            disabled={savingMemory}
+            className="mt-4 w-full rounded-2xl py-3.5 text-sm font-bold text-white transition active:scale-[0.98] disabled:opacity-60"
+            style={{ background: '#C2714A' }}
           >
-            <span
-              className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all duration-200"
-              style={{ left: draft.isExpandable ? 'calc(100% - 1.125rem)' : '0.125rem' }}
-            />
+            {savingMemory ? 'Création…' : `Créer ce souvenir →`}
           </button>
         </div>
-
-        {/* Next / Done button */}
-        <button
-          type="button"
-          onClick={handleNext}
-          className="mt-4 w-full rounded-2xl py-3.5 text-sm font-bold text-white transition active:scale-[0.98]"
-          style={{ background: '#C2714A' }}
-        >
-          {isLast ? 'Terminer ✓' : 'Suivant →'}
-        </button>
-      </div>
+      )}
     </div>
   )
 }
