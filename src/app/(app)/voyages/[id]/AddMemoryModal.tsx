@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import exifr from 'exifr'
 import { supabase } from '@/lib/supabase'
 import type { Activity, ActivityType } from '@/lib/types'
@@ -8,6 +8,7 @@ import { useToast } from '@/contexts/ToastContext'
 
 interface Props {
   tripId: string
+  tripDestination?: string | null
   prefill?: { title?: string; activityType?: ActivityType; locationName?: string }
   activity?: Activity
   onClose: () => void
@@ -26,7 +27,7 @@ const TYPES: { value: ActivityType; emoji: string; label: string }[] = [
 function todayStr() { return new Date().toISOString().split('T')[0] }
 function nowTimeStr() { return new Date().toTimeString().slice(0, 5) }
 
-export default function AddMemoryModal({ tripId, prefill, activity, onClose, onCreated }: Props) {
+export default function AddMemoryModal({ tripId, tripDestination, prefill, activity, onClose, onCreated }: Props) {
   const { toast } = useToast()
   const isEdit = !!activity
 
@@ -51,11 +52,93 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
   const [readingExif, setReadingExif] = useState(false)
 
   const [cost, setCost] = useState<string>(activity?.cost != null ? String(activity.cost) : '')
+  const [currency, setCurrency] = useState<{ code: string; symbol: string; name: string }>({ code: 'EUR', symbol: '€', name: 'Euro' })
+  const [costEur, setCostEur] = useState<number | null>(activity?.cost_eur ?? null)
+  const [loadingRate, setLoadingRate] = useState(false)
   const [isExpandable, setIsExpandable] = useState(activity?.is_expandable ?? false)
   const [classifying, setClassifying] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const COUNTRY_CURRENCY: Record<string, { code: string; symbol: string; name: string }> = {
+    'japon': { code: 'JPY', symbol: '¥', name: 'Yen japonais' },
+    'japan': { code: 'JPY', symbol: '¥', name: 'Yen japonais' },
+    'états-unis': { code: 'USD', symbol: '$', name: 'Dollar US' },
+    'united states': { code: 'USD', symbol: '$', name: 'Dollar US' },
+    'usa': { code: 'USD', symbol: '$', name: 'Dollar US' },
+    'royaume-uni': { code: 'GBP', symbol: '£', name: 'Livre sterling' },
+    'united kingdom': { code: 'GBP', symbol: '£', name: 'Livre sterling' },
+    'angleterre': { code: 'GBP', symbol: '£', name: 'Livre sterling' },
+    'suisse': { code: 'CHF', symbol: 'CHF', name: 'Franc suisse' },
+    'switzerland': { code: 'CHF', symbol: 'CHF', name: 'Franc suisse' },
+    'thaïlande': { code: 'THB', symbol: '฿', name: 'Baht thaïlandais' },
+    'thailand': { code: 'THB', symbol: '฿', name: 'Baht thaïlandais' },
+    'maroc': { code: 'MAD', symbol: 'MAD', name: 'Dirham marocain' },
+    'morocco': { code: 'MAD', symbol: 'MAD', name: 'Dirham marocain' },
+    'turquie': { code: 'TRY', symbol: '₺', name: 'Lire turque' },
+    'turkey': { code: 'TRY', symbol: '₺', name: 'Lire turque' },
+    'mexique': { code: 'MXN', symbol: '$', name: 'Peso mexicain' },
+    'mexico': { code: 'MXN', symbol: '$', name: 'Peso mexicain' },
+    'australie': { code: 'AUD', symbol: 'A$', name: 'Dollar australien' },
+    'australia': { code: 'AUD', symbol: 'A$', name: 'Dollar australien' },
+    'canada': { code: 'CAD', symbol: 'CA$', name: 'Dollar canadien' },
+    'chine': { code: 'CNY', symbol: '¥', name: 'Yuan chinois' },
+    'china': { code: 'CNY', symbol: '¥', name: 'Yuan chinois' },
+    'corée': { code: 'KRW', symbol: '₩', name: 'Won coréen' },
+    'korea': { code: 'KRW', symbol: '₩', name: 'Won coréen' },
+    'inde': { code: 'INR', symbol: '₹', name: 'Roupie indienne' },
+    'india': { code: 'INR', symbol: '₹', name: 'Roupie indienne' },
+    'brésil': { code: 'BRL', symbol: 'R$', name: 'Real brésilien' },
+    'brazil': { code: 'BRL', symbol: 'R$', name: 'Real brésilien' },
+    'indonésie': { code: 'IDR', symbol: 'Rp', name: 'Roupie indonésienne' },
+    'indonesia': { code: 'IDR', symbol: 'Rp', name: 'Roupie indonésienne' },
+    'vietnam': { code: 'VND', symbol: '₫', name: 'Dong vietnamien' },
+    'singapour': { code: 'SGD', symbol: 'S$', name: 'Dollar singapourien' },
+    'singapore': { code: 'SGD', symbol: 'S$', name: 'Dollar singapourien' },
+    'norvège': { code: 'NOK', symbol: 'kr', name: 'Couronne norvégienne' },
+    'suède': { code: 'SEK', symbol: 'kr', name: 'Couronne suédoise' },
+    'danemark': { code: 'DKK', symbol: 'kr', name: 'Couronne danoise' },
+    'pologne': { code: 'PLN', symbol: 'zł', name: 'Zloty polonais' },
+    'égypte': { code: 'EGP', symbol: 'E£', name: 'Livre égyptienne' },
+    'egypt': { code: 'EGP', symbol: 'E£', name: 'Livre égyptienne' },
+    'argentine': { code: 'ARS', symbol: '$', name: 'Peso argentin' },
+    'argentina': { code: 'ARS', symbol: '$', name: 'Peso argentin' },
+    'colombie': { code: 'COP', symbol: '$', name: 'Peso colombien' },
+    'pérou': { code: 'PEN', symbol: 'S/', name: 'Sol péruvien' },
+    'tunisie': { code: 'TND', symbol: 'DT', name: 'Dinar tunisien' },
+    'sénégal': { code: 'XOF', symbol: 'CFA', name: 'Franc CFA' },
+    'côte d\'ivoire': { code: 'XOF', symbol: 'CFA', name: 'Franc CFA' },
+  }
+
+  useEffect(() => {
+    // In edit mode, initialize from saved value
+    if (isEdit && activity?.cost_currency && activity.cost_currency !== 'EUR') {
+      const saved = Object.values(COUNTRY_CURRENCY).find(c => c.code === activity.cost_currency)
+      if (saved) { setCurrency(saved); return }
+    }
+    // Detect from activity location, then fall back to trip destination
+    const lower = (locationName + ' ' + (tripDestination ?? '')).toLowerCase()
+    const match = Object.entries(COUNTRY_CURRENCY).find(([key]) => lower.includes(key))
+    const detected = match ? match[1] : { code: 'EUR', symbol: '€', name: 'Euro' }
+    setCurrency(detected)
+    if (!isEdit) setCostEur(null)
+  }, [locationName, tripDestination])
+
+  useEffect(() => {
+    if (currency.code === 'EUR' || !cost.trim()) { setCostEur(null); return }
+    const amount = parseFloat(cost.replace(',', '.'))
+    if (isNaN(amount) || amount <= 0) { setCostEur(null); return }
+    setLoadingRate(true)
+    fetch(`https://api.frankfurter.app/latest?from=${currency.code}&to=EUR`)
+      .then(r => r.json())
+      .then(data => {
+        const rate = data?.rates?.EUR
+        if (rate) setCostEur(Math.round(amount * rate * 100) / 100)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingRate(false))
+  }, [cost, currency.code])
 
   const handlePhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -110,10 +193,16 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
             )
             const geo = await res.json()
             const addr = geo.address ?? {}
+            const place = addr.amenity || addr.tourism || addr.historic || addr.leisure || null
+            const road = addr.road || addr.pedestrian || addr.footway || null
+            const neighbourhood = addr.neighbourhood || addr.suburb || null
             const city = addr.city || addr.town || addr.village || addr.municipality || addr.county
             const country = addr.country
-            if (city || country) {
-              setLocationName([city, country].filter(Boolean).join(', '))
+            const parts = [place || road, neighbourhood !== city ? neighbourhood : null, city, country]
+              .filter((v): v is string => Boolean(v))
+              .filter((v, i, a) => a.indexOf(v) === i)
+            if (parts.length > 0) {
+              setLocationName(parts.join(', '))
               filledLocation = true
             }
           } catch { /* pas de réseau */ }
@@ -168,6 +257,10 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         scheduled_at: scheduledAt,
         photos: allPhotos,
         cost: cost.trim() ? parseFloat(cost.replace(',', '.')) : null,
+        cost_currency: currency.code,
+        cost_eur: currency.code === 'EUR'
+          ? (cost.trim() ? parseFloat(cost.replace(',', '.')) : null)
+          : costEur,
         is_expandable: isExpandable,
       }).eq('id', activity.id)
       if (updateError) { setError(updateError.message); setUploading(false); return }
@@ -184,6 +277,10 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
         location_name: locationName.trim() || null,
         photos: allPhotos,
         cost: cost.trim() ? parseFloat(cost.replace(',', '.')) : null,
+        cost_currency: currency.code,
+        cost_eur: currency.code === 'EUR'
+          ? (cost.trim() ? parseFloat(cost.replace(',', '.')) : null)
+          : costEur,
         is_expandable: isExpandable,
       })
       if (insertError) { setError(insertError.message); setUploading(false); return }
@@ -348,19 +445,26 @@ export default function AddMemoryModal({ tripId, prefill, activity, onClose, onC
           />
 
           {/* Coût */}
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#B5A89A' }}>€</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              placeholder="Coût (optionnel)"
-              value={cost}
-              onChange={e => setCost(e.target.value)}
-              min="0"
-              step="0.01"
-              className={`${inputClass} pl-8`}
-              style={inputStyle}
-            />
+          <div>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: '#B5A89A' }}>{currency.symbol}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder={`Coût en ${currency.name} (optionnel)`}
+                value={cost}
+                onChange={e => setCost(e.target.value)}
+                min="0"
+                step="0.01"
+                className={`${inputClass} pl-8`}
+                style={inputStyle}
+              />
+            </div>
+            {currency.code !== 'EUR' && cost.trim() && (
+              <p className="mt-1.5 pl-1 text-xs" style={{ color: '#8A7B6A' }}>
+                {loadingRate ? 'Conversion en cours…' : costEur != null ? `≈ ${costEur.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` : ''}
+              </p>
+            )}
           </div>
 
           {/* Toggle page détaillée */}

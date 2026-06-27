@@ -69,9 +69,11 @@ activity_type (food/culture/transport/hotel/nature/other)
 entry_type (memory/planned)
 scheduled_at, location_name, location_lat, location_lng
 photos (text[])
-cost (numeric, nullable)    ← coût en € du souvenir
-is_expandable (bool)        ← page détaillée activée
-photo_details (jsonb)       ← [{url, caption}] galerie enrichie
+cost (numeric, nullable)         ← coût dans la devise locale
+cost_currency (text, default 'EUR')  ← code ISO devise (JPY, USD…)
+cost_eur (numeric, nullable)    ← équivalent EUR via frankfurter.app
+is_expandable (bool)            ← page détaillée activée
+photo_details (jsonb)           ← [{url, caption}] galerie enrichie
 created_at, updated_at
 ```
 
@@ -182,9 +184,12 @@ CREATE POLICY "activities_delete" ON activities FOR DELETE USING (
 ### Souvenirs (activities)
 - Ajout depuis photo (EXIF auto-fill date + lieu GPS)
 - **Auto-détection du type** via Gemini Vision (🍽️/🏛️/🌿/🏨/🚌/📍)
-- Champ coût optionnel (€) par souvenir
+- Champ coût optionnel par souvenir, avec **devise automatique selon le pays** (JPY au Japon, USD aux USA, etc.) via une map statique pays→devise
+- **Taux de change live** via frankfurter.app (sans clé API) → `cost_eur` calculé à la saisie
+- **Total budget EUR** affiché sur la carte héro du voyage (💶 X,XX € au total)
 - Page détaillée optionnelle (`is_expandable`) : galerie illimitée + légendes par photo
 - Modification / suppression
+- **Import en masse** : bouton "📷 Importer" fixe sur la page voyage → sélection multiple → formulaire séquentiel (N/total) → titre obligatoire (shake si vide) → EXIF auto (date + GPS via Nominatim) + Gemini en arrière-plan → upload + insert en lot
 
 ### Collaboratif
 - Inviter un abonné dans un voyage
@@ -223,5 +228,5 @@ CREATE POLICY "activities_delete" ON activities FOR DELETE USING (
 
 ## À faire (backlog)
 
-- Import en masse de photos : sélection multiple → remplir titre/desc pour chaque (EXIF pré-rempli)
+- Carte interactive de l'itinéraire (mise en attente par l'utilisateur)
 - Carte interactive de l'itinéraire (mise en attente par l'utilisateur)

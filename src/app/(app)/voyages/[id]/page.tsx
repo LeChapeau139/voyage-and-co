@@ -8,6 +8,7 @@ import type { Trip, Activity, ActivityType } from '@/lib/types'
 import { useCreateAction } from '@/contexts/CreateActionContext'
 import { useToast } from '@/contexts/ToastContext'
 import AddMemoryModal from './AddMemoryModal'
+import BulkImportFlow from './BulkImportFlow'
 import InviteMemberSheet from './InviteMemberSheet'
 import PageFade from '@/components/PageFade'
 import type { TripMember, Profile } from '@/lib/types'
@@ -195,6 +196,7 @@ export default function TripDetailPage() {
   const [members, setMembers] = useState<(TripMember & { profile?: Profile })[]>([])
   const [removeConfirm, setRemoveConfirm] = useState<(TripMember & { profile?: Profile }) | null>(null)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [showBulkImport, setShowBulkImport] = useState(false)
   const coverFileRef = useRef<HTMLInputElement>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const { setAction } = useCreateAction()
@@ -380,26 +382,26 @@ export default function TripDetailPage() {
             ? <img src={trip.cover_url} alt={trip.name} className="h-full w-full object-cover" />
             : <div className="h-full w-full" style={{ background: 'linear-gradient(135deg, #E8D5C0, #C4956A)' }} />
           }
-          {isOwner && (
-            <button
-              onClick={() => coverFileRef.current?.click()}
-              disabled={uploadingCover}
-              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition active:scale-90 disabled:opacity-50"
-            >
-              {uploadingCover
-                ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                : <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-              }
-            </button>
-          )}
           <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={changeCover} />
           <div className="relative -mt-[180px] h-[180px]"
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.65) 100%)' }}
           >
             {trip.is_active && <div className="absolute inset-0 rounded-3xl ring-2 ring-[#C2714A]" />}
+            {isOwner && (
+              <button
+                onClick={() => coverFileRef.current?.click()}
+                disabled={uploadingCover}
+                className="absolute top-3 left-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition active:scale-90 disabled:opacity-50"
+              >
+                {uploadingCover
+                  ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  : <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                }
+              </button>
+            )}
             <div className="absolute bottom-0 left-0 right-0 p-4">
               <div className="mb-1 flex items-center gap-2 flex-wrap">
                 {isOwner
@@ -412,6 +414,18 @@ export default function TripDetailPage() {
               </div>
               <h1 className="text-xl font-bold text-white drop-shadow-sm">{trip.name}</h1>
               {trip.destination && <p className="text-xs text-white/70">📍 {trip.destination}</p>}
+              {(() => {
+                const totalEur = activities.reduce((sum, a) => {
+                  const v = a.cost_eur != null ? a.cost_eur : (a.cost_currency === 'EUR' && a.cost != null ? a.cost : null)
+                  return v != null ? sum + v : sum
+                }, 0)
+                if (totalEur <= 0) return null
+                return (
+                  <p className="text-xs text-white/80 mt-0.5">
+                    💶 {totalEur.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € au total
+                  </p>
+                )
+              })()}
 
               {/* Membres row */}
               <div className="mt-2 flex items-center gap-1.5">
@@ -598,6 +612,7 @@ export default function TripDetailPage() {
         {(showModal || editActivity) && (
           <AddMemoryModal
             tripId={trip.id}
+            tripDestination={trip.destination}
             activity={editActivity ?? undefined}
             onClose={() => { setShowModal(false); setEditActivity(null) }}
             onCreated={() => { setShowModal(false); setEditActivity(null); fetchData() }}
@@ -662,6 +677,27 @@ export default function TripDetailPage() {
               </div>
             </div>
           </div>
+        )}
+        {/* Bulk import button — always visible, above BottomNav */}
+        {(isOwner || acceptedMembers.some(m => m.user_id === currentUserId)) && (
+          <button
+            onClick={() => setShowBulkImport(true)}
+            className="fixed bottom-24 right-4 z-40 flex items-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold text-white shadow-lg transition active:scale-95"
+            style={{ background: '#2C2416' }}
+            title="Importer des photos en masse"
+          >
+            📷 Importer
+          </button>
+        )}
+
+        {/* Bulk import flow */}
+        {showBulkImport && (
+          <BulkImportFlow
+            tripId={trip.id}
+            tripDestination={trip.destination}
+            onClose={() => setShowBulkImport(false)}
+            onDone={() => { setShowBulkImport(false); fetchData() }}
+          />
         )}
       </div>
     </PageFade>

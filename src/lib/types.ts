@@ -87,6 +87,8 @@ export interface Activity {
   location_lng: number | null
   photos: string[]
   cost: number | null
+  cost_currency: string
+  cost_eur: number | null
   is_expandable: boolean
   photo_details: PhotoDetail[]
   created_at: string
